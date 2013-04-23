@@ -6,14 +6,6 @@ import System.Environment
 import System.Process
 import System.Exit
 
-import Data.Version
-import Paths_hermit as P
-
-hermit_version :: String
-hermit_version = "HERMIT v" ++ showVersion P.version
-
-
-
 main :: IO ()
 main = do
     (file_nm:_) <- getArgs -- TODO: real option parser
