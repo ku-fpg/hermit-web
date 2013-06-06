@@ -1,11 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 module HERMITWEB where
 
-import GhcPlugins hiding ((<>))
+import GhcPlugins hiding ((<>), liftIO)
 
 import Language.HERMIT.Kernel.Scoped
 import Language.HERMIT.Plugin
 
+import Control.Monad.IO.Class (liftIO)
 import Data.Char (isDigit)
 import Data.Monoid
 import qualified Data.Text.Lazy as T
@@ -18,10 +19,10 @@ showText = T.pack . show
 plugin :: Plugin
 plugin = hermitPlugin server
 
-server :: [CommandLineOption] -> ModGuts -> CoreM ModGuts
-server _opts = scopedKernel $ \ kernel initSAST -> do
+server :: PhaseInfo -> [CommandLineOption] -> ModGuts -> CoreM ModGuts
+server _pi _opts = scopedKernel $ \ kernel initSAST -> do
 
-    scotty 3000 $ do
+    scotty 3000 $ do
         get "/" $ do
             html $ mconcat ["<html><body>"
                            ,"Hackers Interface:</br>"
@@ -39,13 +40,13 @@ server _opts = scopedKernel $ \ kernel initSAST -> do
         post "/abort" $ do
             liftIO $ abortS kernel :: ActionM () -- liftIO is underconstrained without the type sig
 
-        post "/resume" $ do
+        post "/resume" $ do
             sast <- param "sast"
-            liftIO $ resumeS kernel sast
+            liftIO $ resumeS kernel sast
 
 instance Parsable SAST where
     parseParam t = if all isDigit str
                    then Right $ SAST (read str)
                    else Left "cannot parse SAST"
         where str = dropWhile (not . isDigit) $ T.unpack t
-                
+

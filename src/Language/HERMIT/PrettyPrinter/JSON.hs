@@ -11,7 +11,7 @@ import qualified Data.Text as T
 import qualified GhcPlugins as GHC
 import Language.HERMIT.Kure
 import Language.HERMIT.Core
-import Language.HERMIT.PrettyPrinter
+import Language.HERMIT.PrettyPrinter.Common
 
 corePrettyH :: PrettyOptions -> TranslateH Core Value
 corePrettyH _opts = do
