@@ -35,7 +35,7 @@ Library
   Exposed-modules:
        HERMITWEB
 
-       Language.HERMIT.PrettyPrinter.JSON
+       
 
 --  Other-modules:
   Hs-Source-Dirs: src
