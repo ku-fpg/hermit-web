@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | JSON pretty printer
-module Language.HERMIT.PrettyPrinter.JSON where
+module HERMIT.PrettyPrinter.JSON where
 
 import Control.Arrow
 
@@ -9,9 +9,9 @@ import Data.Aeson.Types
 import qualified Data.Text as T
 
 import qualified GhcPlugins as GHC
-import Language.HERMIT.Kure
-import Language.HERMIT.Core
-import Language.HERMIT.PrettyPrinter.Common
+import HERMIT.Kure
+import HERMIT.Core
+import HERMIT.PrettyPrinter.Common
 
 corePrettyH :: PrettyOptions -> TranslateH Core Value
 corePrettyH _opts = do
