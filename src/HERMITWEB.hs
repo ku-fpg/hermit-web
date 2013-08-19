@@ -3,8 +3,8 @@ module HERMITWEB where
 
 import GhcPlugins hiding ((<>), liftIO)
 
-import Language.HERMIT.Kernel.Scoped
-import Language.HERMIT.Plugin
+import HERMIT.Kernel.Scoped
+import HERMIT.Plugin
 
 import Control.Monad.IO.Class (liftIO)
 import Data.Char (isDigit)
