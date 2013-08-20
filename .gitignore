@@ -1,2 +1,9 @@
-*.o
+dist/
+*~
 *.hi
+*.o
+*.swp
+*.swo
+*.DS_Store
+*.dump-simpl
+*.dump-prep
