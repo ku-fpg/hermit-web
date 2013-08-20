@@ -1,22 +1,12 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 module HERMIT.Web.JSON where
 
-import GhcPlugins hiding ((<>), liftIO)
-
-import HERMIT.Kernel.Scoped
-import HERMIT.Optimize
 import HERMIT.Core
 
 import Control.Applicative
-import Control.Monad.IO.Class (liftIO)
 import Control.Monad
 
 import Data.Aeson hiding (json)
-import Data.Char (isDigit)
-import Data.Monoid
-import qualified Data.Text.Lazy as T
-
-import Web.Scotty
 
 {-
 instance Parsable SAST where

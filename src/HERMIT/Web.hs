@@ -9,18 +9,13 @@ import HERMIT.Interp
 import HERMIT.Parser
 -- import HERMIT.Optimize
 import HERMIT.Plugin
-import HERMIT.Core
 import HERMIT.Shell.Externals
 import HERMIT.Shell.Types
 import HERMIT.Web.JSON
 
-import Control.Applicative
 import Control.Concurrent.MVar
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad
 
-import Data.Aeson hiding (json)
-import Data.Char (isDigit)
 import qualified Data.Map as Map
 import Data.Monoid
 import qualified Data.Text.Lazy as T
@@ -38,7 +33,7 @@ server :: [CommandLineOption] -> OM ()
 server _opts = firstPhase $ liftIO $ do
 -}
 server :: PhaseInfo -> [CommandLineOption] -> ModGuts -> CoreM ModGuts
-server _pi _opts = scopedKernel $ \ kernel initSAST -> do
+server _pi _opts = scopedKernel $ \ _kernel _initSAST -> do
     -- unique to token mapping
     users <- newMVar (Map.empty :: Map.Map Integer Integer)
 
@@ -67,7 +62,7 @@ server _pi _opts = scopedKernel $ \ kernel initSAST -> do
             token <- checkToken u t users
 
             case parseStmtsH cmd of
-                Left  msg   -> raise $ T.pack $ "Parse failure: " ++ msg
+                Left  str   -> raise $ T.pack $ "Parse failure: " ++ str
                 Right stmts -> evalStmts stmts
 
             json $ CommandResponse token "" path
