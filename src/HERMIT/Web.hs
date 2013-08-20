@@ -61,9 +61,9 @@ server _pi _opts = scopedKernel $ \ _kernel _initSAST -> do
             Command (Token u t) cmd path <- jsonData
             token <- checkToken u t users
 
-            case parseStmtsH cmd of
-                Left  str   -> raise $ T.pack $ "Parse failure: " ++ str
-                Right stmts -> evalStmts stmts
+            case parseScript cmd of
+                Left  str    -> raise $ T.pack $ "Parse failure: " ++ str
+                Right script -> evalStmts script
 
             json $ CommandResponse token "" path
 
@@ -101,23 +101,23 @@ checkToken u t db = do
     liftIO $ putMVar db $ Map.adjust (+1) u m
     return $ Token u (t'+1)
 
-evalStmts :: [ExprH] -> ActionM ()
+evalStmts :: Script -> ActionM ()
 evalStmts = mapM_ evalExpr
 
 evalExpr :: ExprH -> ActionM ()
 evalExpr expr = do
     let dict = mkDict shell_externals
     runKureM (\case
-                 AstEffect effect   -> performAstEffect effect expr
-                 ShellEffect effect -> performShellEffect effect
-                 QueryFun query     -> performQuery query
-                 MetaCommand meta   -> performMetaCommand meta
+                 KernelEffect effect -> performKernelEffect effect expr
+                 ShellEffect effect  -> performShellEffect effect
+                 QueryFun query      -> performQuery query
+                 MetaCommand meta    -> performMetaCommand meta
              )
              (raise . T.pack)
              (interpExprH dict interpShellCommand expr)
 
-performAstEffect :: AstEffect -> ExprH -> ActionM ()
-performAstEffect = undefined
+performKernelEffect :: KernelEffect -> ExprH -> ActionM ()
+performKernelEffect = undefined
 performShellEffect :: ShellEffect -> ActionM ()
 performShellEffect = undefined
 performQuery :: QueryFun -> ActionM ()
