@@ -12,7 +12,7 @@ main = do
     putStrLn $ "[starting " ++ hermit_version ++ " web service on " ++ file_nm ++ "]"
 
     let cmds = file_nm : ghcFlags ++ plugin_cmds
-        plugin_cmds = ["-fplugin=HERMITWEB"
+        plugin_cmds = ["-fplugin=HERMIT.Web"
                       ,"-package ghc"]
     putStrLn $ "% ghc " ++ unwords cmds
     ex <- runWithArgs "ghc" cmds
