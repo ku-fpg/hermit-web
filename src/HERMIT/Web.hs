@@ -23,6 +23,7 @@ import Control.Monad.Error
 import Control.Monad.State.Lazy hiding (get, put)
 import qualified Control.Monad.State.Lazy as State
 
+import qualified Data.ByteString.Lazy.Char8 as BS
 import Data.Default
 import qualified Data.Map as Map
 import Data.Monoid
@@ -97,7 +98,7 @@ plugin = hermitPlugin $ \ _pi -> scopedKernel . server
 --server _opts = firstPhase $ do
 server :: [CommandLineOption] -> ScopedKernel -> SAST -> IO ()
 server _opts skernel sast = do
-    let dict = mkDict shell_externals
+    let dict = mkDict $ shell_externals ++ externals
 
     let shellState = CommandLineState
                        { cl_cursor         = sast
@@ -140,7 +141,9 @@ server _opts skernel sast = do
             json $ Token k 0
 
         post "/command" $ do
-            Command t cmd path <- jsonData
+            b <- body
+            liftIO $ putStrLn $ BS.unpack b
+            Command t cmd <- jsonData
             t' <- checkToken t
 
             case parseScript cmd of
@@ -148,7 +151,7 @@ server _opts skernel sast = do
                 Right script -> evalStmts script
 
             ast <- clm $ getAST
-            json $ CommandResponse t' ast path
+            json $ CommandResponse t' ast
 {-
 
         get "/commands" $ do
@@ -189,7 +192,7 @@ evalStmts = mapM_ evalExpr
 
 evalExpr :: ExprH -> ActionH ()
 evalExpr expr = do
-    let dict = mkDict shell_externals
+    dict <- clm $ gets cl_dict
     runKureM (\case
                  KernelEffect effect -> clm $ performKernelEffect effect expr
                  ShellEffect effect  -> clm $ performShellEffect effect

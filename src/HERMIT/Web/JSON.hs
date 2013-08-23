@@ -73,14 +73,13 @@ instance FromJSON Token where
 --             }
 data Command = Command { cToken :: Token
                        , cCmd :: String
-                       , cPath :: [Crumb]
                        }
 
 instance ToJSON Command where
-    toJSON cmd = object [ "token" .= cToken cmd , "cmd" .= cCmd cmd , "path" .= cPath cmd ]
+    toJSON cmd = object [ "token" .= cToken cmd , "cmd" .= cCmd cmd ]
 
 instance FromJSON Command where
-    parseJSON (Object v) = Command <$> v .: "token" <*> v .: "cmd" <*> v .: "path"
+    parseJSON (Object v) = Command <$> v .: "token" <*> v .: "cmd"
     parseJSON _          = mzero
 
 instance ToJSON Crumb where
@@ -114,14 +113,13 @@ instance FromJSON Crumb where
 --                     }
 data CommandResponse = CommandResponse { crToken :: Token
                                        , crAST :: String
-                                       , crPath :: [ Crumb ]
                                        }
 
 instance ToJSON CommandResponse where
-    toJSON cr = object [ "token" .= crToken cr , "ast" .= crAST cr , "path" .= crPath cr ]
+    toJSON cr = object [ "token" .= crToken cr , "ast" .= crAST cr ]
 
 instance FromJSON CommandResponse where
-    parseJSON (Object v) = CommandResponse <$> v .: "token" <*> v .: "ast" <*> v .: "path"
+    parseJSON (Object v) = CommandResponse <$> v .: "token" <*> v .: "ast"
     parseJSON _          = mzero
 
 {-
