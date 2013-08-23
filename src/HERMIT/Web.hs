@@ -11,7 +11,7 @@ import HERMIT.Parser
 import HERMIT.Optimize
 import HERMIT.Plugin
 import HERMIT.PrettyPrinter.Common
-import HERMIT.Shell.Command hiding (commandLine)
+import HERMIT.Shell.Command
 import HERMIT.Shell.Externals
 import HERMIT.Shell.Types
 import HERMIT.Web.JSON
@@ -90,13 +90,13 @@ webm :: MonadTrans t => WebM a -> t WebM a
 webm = lift
 
 plugin :: Plugin
-plugin = hermitPlugin $ \ _pi -> scopedKernel . commandLine
+plugin = hermitPlugin $ \ _pi -> scopedKernel . server
 --plugin = optimize server
 
 --server :: [CommandLineOption] -> CLM IO ()
 --server _opts = firstPhase $ do
-commandLine :: [CommandLineOption] -> ScopedKernel -> SAST -> IO ()
-commandLine _opts skernel sast = do
+server :: [CommandLineOption] -> ScopedKernel -> SAST -> IO ()
+server _opts skernel sast = do
     let dict = mkDict shell_externals
 
     let shellState = CommandLineState
