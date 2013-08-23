@@ -4,20 +4,22 @@ module HERMIT.Web where
 
 import GhcPlugins hiding ((<>), liftIO, text, display)
 
-import HERMIT.Primitive.Composite
-import HERMIT.Primitive.Navigation
-import HERMIT.Primitive.Unfold
 import HERMIT.Dictionary
 import HERMIT.Interp
 import HERMIT.Kure
 import HERMIT.Parser
 import HERMIT.Optimize
+import HERMIT.Plugin
+import HERMIT.PrettyPrinter.Common
+import HERMIT.Shell.Command hiding (commandLine)
 import HERMIT.Shell.Externals
 import HERMIT.Shell.Types
 import HERMIT.Web.JSON
+import HERMIT.Kernel
+import HERMIT.Kernel.Scoped
 
 import Control.Concurrent.MVar
-import Control.Monad
+import Control.Monad.Error
 import Control.Monad.State.Lazy hiding (get, put)
 import qualified Control.Monad.State.Lazy as State
 
@@ -25,8 +27,6 @@ import Data.Default
 import qualified Data.Map as Map
 import Data.Monoid
 import qualified Data.Text.Lazy as T
-
-import qualified Language.Haskell.TH as TH
 
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
@@ -45,7 +45,7 @@ newtype WebT m a = WebT { runWebT :: StateT WebAppState m a }
 instance MonadTrans WebT where
     lift = WebT . lift
 
-type WebM = WebT OM
+type WebM = WebT (CLM IO)
 
 type ScottyH a = ScottyT WebM a
 type ActionH a = ActionT WebM a
@@ -53,55 +53,75 @@ type ActionH a = ActionT WebM a
 instance Show InterpState where
     show = show . isAST
 
-plugin :: Plugin
-plugin = optimize server
-
 -- Global state is threaded with an MVar
 -- importantly, the web app code below can pretend
 -- there is a normal state monad.
-mkScottyApp :: WebAppState -> ScottyH () -> OM Wai.Application
-mkScottyApp wst defs = do
+mkScottyApp :: WebAppState -> CommandLineState -> ScottyH () -> IO Wai.Application
+mkScottyApp wst cst defs = do
     sync <- liftIO newEmptyMVar
-    let runWebM :: WebM a -> OM a
+    let runWebM :: WebM a -> IO a
         runWebM m = do
-            (r,w) <- runStateT (runWebT m) wst
-            h <- State.get
-            liftIO $ putMVar sync (h,w)
-            return r
+            (r,s) <- runCLMToIO cst $ runStateT (runWebT m) wst
+            case r of
+                Left err -> error err
+                Right (r,w) -> do liftIO $ putMVar sync (s,w)
+                                  return r
         runToIO :: WebM a -> IO a
         runToIO m = do
-            (h,w) <- liftIO $ takeMVar sync
-            ((r,w'),h') <- omToIO h $ runStateT (runWebT m) w
-            liftIO $ putMVar sync (h',w')
-            return r
+            (s,w) <- liftIO $ takeMVar sync
+            (r,s') <- runCLMToIO s $ runStateT (runWebT m) w
+            case r of
+                Left err -> error err
+                Right (r,w') -> do liftIO $ putMVar sync (s',w')
+                                   return r
     scottyApp runWebM runToIO defs
+
+runCLMToIO s = flip runStateT s . runErrorT . runCLM
 
 -- The monad transformer stack is quite ridiculous at this point.
 -- So here are some helpers to get things to the right place.
 
--- Do something in the OM monad (the HERMIT plugin monad, see HERMIT.Optimize)
-om :: MonadTrans t => OM a -> t WebM a
-om = lift . lift
+-- Do something in the CLM IO monad (the HERMIT plugin monad, see HERMIT.Optimize)
+clm :: MonadTrans t => CLM IO a -> t WebM a
+clm = lift . lift
 
 -- Do something to the web application state.
 webm :: MonadTrans t => WebM a -> t WebM a
 webm = lift
 
-server :: [CommandLineOption] -> OM ()
-server _opts = firstPhase $ do
-  app <- mkScottyApp def $ do
-        om $ run $ tryR simplifyR
-        om $ run $ tryR simplifyR
-        om $ run $ tryR simplifyR
-        om $ run $ tryR simplifyR
-        webm $ State.put $ def { users = Map.singleton 3 5 }
+plugin :: Plugin
+plugin = hermitPlugin $ \ _pi -> scopedKernel . commandLine
+--plugin = optimize server
 
-        get "/" $ do
-            om $ run $ onebuR $ promoteExprR unfoldR
-            st'' <- om State.get
-            om $ at (liftM snocPathToPath $ rhsOf $ TH.mkName "main") display
-            text $ showText st''
+--server :: [CommandLineOption] -> CLM IO ()
+--server _opts = firstPhase $ do
+commandLine :: [CommandLineOption] -> ScopedKernel -> SAST -> IO ()
+commandLine _opts skernel sast = do
+    let dict = mkDict shell_externals
 
+    let shellState = CommandLineState
+                       { cl_cursor         = sast
+                       , cl_pretty         = "clean"
+                       , cl_pretty_opts    = def
+                       , cl_render         = unicodeConsole
+                       , cl_height         = 30
+                       , cl_nav            = False
+                       , cl_running_script = False
+                       , cl_tick          = undefined -- TODO
+                       , cl_corelint      = False
+                       , cl_failhard      = False
+                       , cl_window        = mempty
+                       , cl_dict          = dict
+                       , cl_scripts       = []
+                       , cl_kernel        = skernel
+                       , cl_initSAST      = sast
+                       , cl_version       = VersionStore
+                                              { vs_graph = []
+                                              , vs_tags  = []
+                                              }
+                       }
+
+    app <- mkScottyApp def shellState $ do
         get "/webstate" $ do
             st <- webm State.get
             html $ mconcat ["<html><body>"
@@ -119,102 +139,75 @@ server _opts = firstPhase $ do
             webm $ modify $ \st -> st { users = Map.insert k 0 m }
             json $ Token k 0
 
-
-
-{-
-        get "/" $ do
-            html $ mconcat ["<html><body>"
-                           ,"Hackers Interface:</br>"
-                           -- abort
-                           ,"<form method=POST action=\"/abort\">"
-                           ,"<input type=submit name=Go/>"
-                           ,"</form>"
-                           -- resume
-                           ,"<form method=POST action=\"/resume\">"
-                           ,"<input type=submit name=Go/>"
-                           ,"</form>"
-                           ,"</body></html>"]
-
         post "/command" $ do
-            Command (Token u t) cmd path <- jsonData
-            token <- checkToken u t users
+            Command t cmd path <- jsonData
+            t' <- checkToken t
 
             case parseScript cmd of
                 Left  str    -> raise $ T.pack $ "Parse failure: " ++ str
                 Right script -> evalStmts script
 
-            json $ CommandResponse token "" path
-
+            ast <- clm $ getAST
+            json $ CommandResponse t' ast path
 {-
+
         get "/commands" $ do
             json $ mconcat []
 
         get "/complete" $ do
             query <- jsonData
             json $ mconcat []
--}
 
         get "/reset" $ do
             t <- jsonData
             json $ t { tToken = 0 }
 -}
 
-  liftIO $ Warp.run 3000 app
+    liftIO $ Warp.run 3000 app
 
 {-# INLINE showText #-}
 showText :: Show a => a -> T.Text
 showText = T.pack . show
 
-
 type UniqueId = Integer
 type TokenNum = Integer
-type UserDB = MVar (Map.Map UniqueId TokenNum)
 
 nextKey :: Map.Map Integer a -> Integer
 nextKey m | Map.null m = 0
           | otherwise = let (k,_) = Map.findMax m in k + 1
 
-checkToken :: Integer -> Integer -> UserDB -> ActionM Token
-checkToken u t db = do
-    m <- liftIO $ takeMVar db
+checkToken :: Token -> ActionH Token
+checkToken (Token u t) = do
+    m <- webm $ gets users
     t' <- maybe (raise "user id not found!") return $ Map.lookup u m
     guardMsg (t >= t') "token out of order"
-    liftIO $ putMVar db $ Map.adjust (+1) u m
+    webm $ modify $ \ st -> st { users = Map.adjust (+1) u m }
     return $ Token u (t'+1)
 
-evalStmts :: Script -> ActionM ()
+evalStmts :: Script -> ActionH ()
 evalStmts = mapM_ evalExpr
 
-evalExpr :: ExprH -> ActionM ()
+evalExpr :: ExprH -> ActionH ()
 evalExpr expr = do
     let dict = mkDict shell_externals
     runKureM (\case
-                 KernelEffect effect -> performKernelEffect effect
-                 ShellEffect effect  -> performShellEffect effect
-                 QueryFun query      -> performQuery query
-                 MetaCommand meta    -> performMetaCommand meta
+                 KernelEffect effect -> clm $ performKernelEffect effect expr
+                 ShellEffect effect  -> clm $ performShellEffect effect
+                 QueryFun query      -> clm $ performQuery query
+                 MetaCommand meta    -> clm $ performMetaCommand meta
              )
              (raise . T.pack)
              (interpExprH dict interpShellCommand expr)
 
-{-
-ata KernelEffect :: * where
-   Apply      :: (Injection GHC.ModGuts g, Walker HermitC g) => RewriteH g              -> KernelEffect
-   Pathfinder :: (Injection GHC.ModGuts g, Walker HermitC g) => TranslateH g LocalPathH -> KernelEffect
-   Direction  ::                                                Direction               -> KernelEffect
-   BeginScope ::                                                                           KernelEffect
-   EndScope   ::                                                                           KernelEffect
-   CorrectnessCritera :: (Injection GHC.ModGuts g, Walker HermitC g) => TranslateH g () -> KernelEffect
--}
-performKernelEffect :: KernelEffect -> ActionM ()
-performKernelEffect _ = raise "performKernelEffect unimplemented"
-{-
-performKernelEffect (Apply rr) = do
-    sast' <- iokm2clm "Rewrite failed: " $ applyS sk (cl_cursor st) rr kEnv
--}
-performShellEffect :: ShellEffect -> ActionM ()
-performShellEffect _ = raise "performShellEffect unimplemented"
-performQuery :: QueryFun -> ActionM ()
-performQuery _ = raise "performShellEffect unimplemented"
-performMetaCommand :: MetaCommand -> ActionM ()
-performMetaCommand _ = raise "performShellEffect unimplemented"
+getAST :: MonadIO m => CLM m String
+getAST = do
+    st <- State.get
+    focusPath <- getFocusPath
+    let skernel = cl_kernel st
+        ppOpts = (cl_pretty_opts st) { po_focus = Just focusPath }
+    iokm2clm' "Rendering error: "
+              (\doc -> let HTML str = renderCode ppOpts doc in return str)
+              (toASTS skernel (cl_cursor st) >>= liftKureM >>= \ ast ->
+                queryK (kernelS skernel) ast (extractT $ pathT (cl_window st) $ liftPrettyH ppOpts $ pretty st) (cl_kernel_env st))
+
+
