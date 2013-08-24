@@ -43,6 +43,8 @@ Library
         HERMIT.Web
   other-modules:
         HERMIT.Web.JSON
+        HERMIT.Web.Renderer
+        HERMIT.Web.Types
 
 
 

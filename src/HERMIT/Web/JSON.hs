@@ -7,42 +7,10 @@ import Control.Applicative
 import Control.Monad
 
 import Data.Aeson hiding (json)
+import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 
-{-
-instance Parsable SAST where
-    parseParam t = if all isDigit str
-                   then Right $ SAST (read str)
-                   else Left "cannot parse SAST"
-        where str = dropWhile (not . isDigit) $ T.unpack t
-
-instance ToJSON EvalRequest where
-  toJSON (EvalRequestId id' args)
-        = object [ "id" .= id'
-                 , "arguments" .= toJSON (map Word64String args)
-                 ]
-  toJSON (EvalRequestProgram code args)
-        = object [ "program" .= code
-                 , "arguments" .= toJSON (map Word64String args)
-                 ]
-data EvalResponse = EvalResponseOK
-     { er_outputs :: [Word64]
-     }
-                   | EvalResponseError
-     { er_message :: String
-     }
-     deriving Show
-instance FromJSON EvalResponse where
-   parseJSON (Object v) = do
-           s :: String <- v .: "status"
-           case s of
-             "ok"      -> do
-                     ws :: [Word64String] <- v .: "outputs"
-                     return $ EvalResponseOK $ map (\ (Word64String w) -> w) ws
-             "error"   -> EvalResponseError <$> v .: "message"
-             _ -> mzero
-     where
-   parseJSON _          = mzero
--}
+import Web.Scotty (readEither)
 
 -- | ErrorMsg = { 'msg' : String }
 data ErrorMsg = ErrorMsg { msg :: String }
@@ -112,14 +80,14 @@ instance FromJSON Crumb where
 --                     , 'path' : [ Crumb ] -- echoed from request in case GUI doesn't want to store it
 --                     }
 data CommandResponse = CommandResponse { crToken :: Token
-                                       , crAST :: String
+                                       , crGlyphs :: [Glyph]
                                        }
 
 instance ToJSON CommandResponse where
-    toJSON cr = object [ "token" .= crToken cr , "ast" .= crAST cr ]
+    toJSON cr = object [ "token" .= crToken cr , "glyphs" .= crGlyphs cr ]
 
 instance FromJSON CommandResponse where
-    parseJSON (Object v) = CommandResponse <$> v .: "token" <*> v .: "ast"
+    parseJSON (Object v) = CommandResponse <$> v .: "token" <*> v .: "glyphs"
     parseJSON _          = mzero
 
 {-
@@ -134,4 +102,32 @@ CommandInfo = { 'name' : String
 CompletionQuery = { 'left' : String }
 
 CompletionList = { 'right' : [ String ] }
+
+Glyph = { 'text' : String  -- text to be shown
+        , 'style?' : String -- optional style tag; valid values are KEYWORD, SYNTAX, VAR, TYPE, LIT.
+        }
 -}
+
+data Style = KEYWORD | SYNTAX | VAR | TYPE | LIT
+    deriving (Eq, Read, Show)
+
+instance ToJSON Style where
+    toJSON = String . T.pack . show
+
+instance FromJSON Style where
+    parseJSON (String s) = case readEither $ TL.fromStrict s of
+                            Left _msg -> mzero
+                            Right sty -> pure sty
+    parseJSON _ = mzero
+
+data Glyph = Glyph { gText :: String
+                   , gStyle :: Maybe Style
+                   }
+
+instance ToJSON Glyph where
+    toJSON g = object (("text" .= gText g) : (maybe [] (\s -> ["style" .= s]) (gStyle g)))
+
+instance FromJSON Glyph where
+    parseJSON (Object v) = Glyph <$> v .: "text" <*> v .:? "style"
+    parseJSON _          = mzero
+

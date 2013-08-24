@@ -1,5 +1,4 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, LambdaCase, RankNTypes,
-             GeneralizedNewtypeDeriving, FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings, LambdaCase #-}
 module HERMIT.Web where
 
 import GhcPlugins hiding ((<>), liftIO, text, display)
@@ -8,15 +7,17 @@ import HERMIT.Dictionary
 import HERMIT.Interp
 import HERMIT.Kure
 import HERMIT.Parser
-import HERMIT.Optimize
 import HERMIT.Plugin
 import HERMIT.PrettyPrinter.Common
 import HERMIT.Shell.Command
 import HERMIT.Shell.Externals
 import HERMIT.Shell.Types
-import HERMIT.Web.JSON
 import HERMIT.Kernel
 import HERMIT.Kernel.Scoped
+
+import HERMIT.Web.JSON
+import HERMIT.Web.Renderer
+import HERMIT.Web.Types
 
 import Control.Concurrent.MVar
 import Control.Monad.Error
@@ -33,26 +34,6 @@ import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
 
 import Web.Scotty
-
-newtype WebAppState = WebAppState { users :: Map.Map Integer Integer }
-    deriving (Show)
-
-instance Default WebAppState where
-    def = WebAppState { users = Map.empty }
-
-newtype WebT m a = WebT { runWebT :: StateT WebAppState m a }
-    deriving (Monad, MonadIO, MonadState WebAppState)
-
-instance MonadTrans WebT where
-    lift = WebT . lift
-
-type WebM = WebT (CLM IO)
-
-type ScottyH a = ScottyT WebM a
-type ActionH a = ActionT WebM a
-
-instance Show InterpState where
-    show = show . isAST
 
 -- Global state is threaded with an MVar
 -- importantly, the web app code below can pretend
@@ -78,17 +59,6 @@ mkScottyApp wst cst defs = do
     scottyApp runWebM runToIO defs
 
 runCLMToIO s = flip runStateT s . runErrorT . runCLM
-
--- The monad transformer stack is quite ridiculous at this point.
--- So here are some helpers to get things to the right place.
-
--- Do something in the CLM IO monad (the HERMIT plugin monad, see HERMIT.Optimize)
-clm :: MonadTrans t => CLM IO a -> t WebM a
-clm = lift . lift
-
--- Do something to the web application state.
-webm :: MonadTrans t => WebM a -> t WebM a
-webm = lift
 
 plugin :: Plugin
 plugin = hermitPlugin $ \ _pi -> scopedKernel . server
@@ -172,9 +142,6 @@ server _opts skernel sast = do
 showText :: Show a => a -> T.Text
 showText = T.pack . show
 
-type UniqueId = Integer
-type TokenNum = Integer
-
 nextKey :: Map.Map Integer a -> Integer
 nextKey m | Map.null m = 0
           | otherwise = let (k,_) = Map.findMax m in k + 1
@@ -202,14 +169,14 @@ evalExpr expr = do
              (raise . T.pack)
              (interpExprH dict interpShellCommand expr)
 
-getAST :: MonadIO m => CLM m String
+getAST :: MonadIO m => CLM m [Glyph]
 getAST = do
     st <- State.get
     focusPath <- getFocusPath
     let skernel = cl_kernel st
         ppOpts = (cl_pretty_opts st) { po_focus = Just focusPath }
     iokm2clm' "Rendering error: "
-              (\doc -> let HTML str = renderCode ppOpts doc in return str)
+              (\doc -> let Glyphs gs = renderCode ppOpts doc in return gs)
               (toASTS skernel (cl_cursor st) >>= liftKureM >>= \ ast ->
                 queryK (kernelS skernel) ast (extractT $ pathT (cl_window st) $ liftPrettyH ppOpts $ pretty st) (cl_kernel_env st))
 
