@@ -19,17 +19,21 @@ import HERMIT.Web.JSON
 import HERMIT.Web.Renderer
 import HERMIT.Web.Types
 
+import Blaze.ByteString.Builder (fromByteString)
+
 import Control.Concurrent.MVar
 import Control.Monad.Error
 import Control.Monad.State.Lazy hiding (get, put)
 import qualified Control.Monad.State.Lazy as State
 
-import qualified Data.ByteString.Lazy.Char8 as BS
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Default
 import qualified Data.Map as Map
 import Data.Monoid
 import qualified Data.Text.Lazy as T
 
+import Network.HTTP.Types (status200, status500)
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
 
@@ -43,29 +47,41 @@ mkScottyApp wst cst defs = do
     sync <- liftIO newEmptyMVar
     let runWebM :: WebM a -> IO a
         runWebM m = do
-            (r,s) <- runCLMToIO cst $ runStateT (runWebT m) wst
+            (r,s) <- runCLMToIO cst $ flip runStateT wst $ runErrorT $ runWebT m
             case r of
                 Left err -> error err
                 Right (r,w) -> do liftIO $ putMVar sync (s,w)
-                                  return r
-        runToIO :: WebM a -> IO a
+                                  either (\_ -> fail "don't abort/resume outside of an action") return r
+        runToIO :: WebM Wai.Response -> IO Wai.Response
         runToIO m = do
             (s,w) <- liftIO $ takeMVar sync
-            (r,s') <- runCLMToIO s $ runStateT (runWebT m) w
+            (r,s') <- runCLMToIO s $ flip runStateT w $ runErrorT $ runWebT m
             case r of
-                Left err -> error err
+                Left err -> fail err
                 Right (r,w') -> do liftIO $ putMVar sync (s',w')
-                                   return r
+                                   either (handleError (cl_kernel s')) return r
     scottyApp runWebM runToIO defs
 
+handleError :: ScopedKernel -> WebAppError -> IO Wai.Response
+handleError k WAEAbort = do
+    abortS k 
+    return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
+           $ fromByteString "<h1>HERMIT Aborting</h1>"
+handleError k (WAEResume sast) = do
+    resumeS k sast >>= runKureM return fail 
+    return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
+           $ fromByteString "<h1>HERMIT Resuming</h1>"
+handleError _ (WAEError str) = return $ Wai.ResponseBuilder status500 [("Content-Type","text/html")]
+                       $ fromByteString $ "<h1>500: " <> BS.pack str <> "</h1>"
+
+runCLMToIO :: CommandLineState -> CLM m a -> m (Either String a, CommandLineState)
 runCLMToIO s = flip runStateT s . runErrorT . runCLM
 
 plugin :: Plugin
-plugin = hermitPlugin $ \ _pi -> scopedKernel . server
---plugin = optimize server
+plugin = hermitPlugin $ \ phaseInfo -> if phaseNum phaseInfo == 0 
+                                       then scopedKernel . server
+                                       else const return
 
---server :: [CommandLineOption] -> CLM IO ()
---server _opts = firstPhase $ do
 server :: [CommandLineOption] -> ScopedKernel -> SAST -> IO ()
 server _opts skernel sast = do
     let dict = mkDict $ shell_externals ++ externals
@@ -112,7 +128,7 @@ server _opts skernel sast = do
 
         post "/command" $ do
             b <- body
-            liftIO $ putStrLn $ BS.unpack b
+            liftIO $ putStrLn $ BL.unpack b
             Command t cmd <- jsonData
             t' <- checkToken t
 
@@ -161,6 +177,9 @@ evalExpr :: ExprH -> ActionH ()
 evalExpr expr = do
     dict <- clm $ gets cl_dict
     runKureM (\case
+                 -- special case these so the MVar doesn't hang
+                 MetaCommand Resume  -> clm (gets cl_cursor) >>= webm . throwError . WAEResume
+                 MetaCommand Abort   -> webm $ throwError WAEAbort
                  KernelEffect effect -> clm $ performKernelEffect effect expr
                  ShellEffect effect  -> clm $ performShellEffect effect
                  QueryFun query      -> clm $ performQuery query
