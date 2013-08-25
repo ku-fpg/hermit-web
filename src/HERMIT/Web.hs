@@ -4,6 +4,7 @@ module HERMIT.Web where
 import GhcPlugins hiding ((<>), liftIO, text, display)
 
 import HERMIT.Dictionary
+import HERMIT.External
 import HERMIT.Interp
 import HERMIT.Kure
 import HERMIT.Parser
@@ -138,19 +139,16 @@ server _opts skernel sast = do
 
             ast <- clm $ getAST
             json $ CommandResponse t' ast
-{-
 
         get "/commands" $ do
-            json $ mconcat []
-
-        get "/complete" $ do
-            query <- jsonData
-            json $ mconcat []
+            json $ CommandList $ [ CommandInfo (externName e) 
+                                               (unlines $ externHelp e) 
+                                               (externTags e) 
+                                 | e <- shell_externals ++ externals ]
 
         get "/reset" $ do
             t <- jsonData
-            json $ t { tToken = 0 }
--}
+            json (t { tToken = 0 })
 
     liftIO $ Warp.run 3000 app
 

@@ -2,11 +2,13 @@
 module HERMIT.Web.JSON where
 
 import HERMIT.Core
+import HERMIT.External
 
 import Control.Applicative
 import Control.Monad
 
 import Data.Aeson hiding (json)
+import Data.Aeson.Types
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 
@@ -90,36 +92,59 @@ instance FromJSON CommandResponse where
     parseJSON (Object v) = CommandResponse <$> v .: "token" <*> v .: "glyphs"
     parseJSON _          = mzero
 
-{-
+-- | CommandList = { 'cmds' : [ CommandInfo ] }
+data CommandList = CommandList { clCmds :: [CommandInfo] }
 
-CommandList = { 'cmds' : [ CommandInfo ] }
+instance ToJSON CommandList where
+    toJSON cl = object [ "cmds" .= clCmds cl ]
 
-CommandInfo = { 'name' : String
-              , 'help' : String
-              , 'tags' : [ String ]
-              }
+instance FromJSON CommandList where
+    parseJSON (Object v) = CommandList <$> v .: "cmds" 
+    parseJSON _          = mzero
 
-CompletionQuery = { 'left' : String }
+-- | CommandInfo = { 'name' : String
+--                 , 'help' : String
+--                 , 'tags' : [ String ]
+--                 }
+data CommandInfo = CommandInfo { ciName :: String
+                               , ciHelp :: String
+                               , ciTags :: [CmdTag]
+                               }
 
-CompletionList = { 'right' : [ String ] }
+instance ToJSON CommandInfo where
+    toJSON ci = object [ "name" .= ciName ci , "help" .= ciHelp ci , "tags" .= ciTags ci ]
 
-Glyph = { 'text' : String  -- text to be shown
-        , 'style?' : String -- optional style tag; valid values are KEYWORD, SYNTAX, VAR, TYPE, LIT.
-        }
--}
+instance FromJSON CommandInfo where
+    parseJSON (Object v) = CommandInfo <$> v .: "name" <*> v .: "help" <*> v .: "tags"
+    parseJSON _          = mzero
+
+instance ToJSON CmdTag where
+    toJSON = stringToJSON
+
+instance FromJSON CmdTag where
+    parseJSON = fromJSONString
 
 data Style = KEYWORD | SYNTAX | VAR | TYPE | LIT
     deriving (Eq, Read, Show)
 
 instance ToJSON Style where
-    toJSON = String . T.pack . show
+    toJSON = stringToJSON
 
 instance FromJSON Style where
-    parseJSON (String s) = case readEither $ TL.fromStrict s of
-                            Left _msg -> mzero
-                            Right sty -> pure sty
-    parseJSON _ = mzero
+    parseJSON = fromJSONString
 
+stringToJSON :: Show a => a -> Value
+stringToJSON = String . T.pack . show
+fromJSONString :: Read a => Value -> Parser a
+fromJSONString (String s) = 
+    case readEither $ TL.fromStrict s of
+        Left _msg -> mzero
+        Right sty -> pure sty
+fromJSONString _ = mzero
+
+-- | Glyph = { 'text' : String  -- text to be shown
+--           , 'style?' : String -- optional style tag; valid values are KEYWORD, SYNTAX, VAR, TYPE, LIT.
+--           }
 data Glyph = Glyph { gText :: String
                    , gStyle :: Maybe Style
                    }
