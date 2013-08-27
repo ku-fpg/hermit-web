@@ -14,17 +14,6 @@ import qualified Data.Text.Lazy as TL
 
 import Web.Scotty (readEither)
 
--- | ErrorMsg = { 'msg' : String }
-data ErrorMsg = ErrorMsg { msg :: String }
-
-instance ToJSON ErrorMsg where
-    toJSON (ErrorMsg m) = object [ "msg" .= m ]
-
-instance FromJSON ErrorMsg where
-    parseJSON (Object v) = ErrorMsg <$> v .: "msg"
-    parseJSON _          = mzero
-
-
 -- | Token = { 'unique' : Number
 --           , 'token' : Number
 --           }

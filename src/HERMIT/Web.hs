@@ -67,13 +67,13 @@ handleError :: ScopedKernel -> WebAppError -> IO Wai.Response
 handleError k WAEAbort = do
     abortS k 
     return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
-           $ fromByteString "<h1>HERMIT Aborting</h1>"
+           $ fromByteString "HERMIT Aborting"
 handleError k (WAEResume sast) = do
     resumeS k sast >>= runKureM return fail 
     return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
-           $ fromByteString "<h1>HERMIT Resuming</h1>"
+           $ fromByteString "HERMIT Resuming"
 handleError _ (WAEError str) = return $ Wai.ResponseBuilder status500 [("Content-Type","text/html")]
-                       $ fromByteString $ "<h1>500: " <> BS.pack str <> "</h1>"
+                                      $ fromByteString $ BS.pack str 
 
 runCLMToIO :: CommandLineState -> CLM m a -> m (Either String a, CommandLineState)
 runCLMToIO s = flip runStateT s . runErrorT . runCLM
