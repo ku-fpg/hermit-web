@@ -148,7 +148,9 @@ server _opts skernel sast = do
 
         get "/reset" $ do
             t <- jsonData
-            json (t { tToken = 0 })
+            let t' = t { tToken = 0 }
+            webm $ modify $ \ st -> st { users = Map.insert (tUnique t') 0 (users st) }
+            json t'
 
     liftIO $ Warp.run 3000 app
 
