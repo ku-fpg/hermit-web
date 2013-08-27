@@ -10,7 +10,7 @@ import Control.Monad.State.Lazy hiding (get, put)
 import Data.Default
 import qualified Data.Map as Map
 
-import Web.Scotty
+import Web.Scotty.Trans
 
 newtype WebAppState = WebAppState { users :: Map.Map Integer Integer }
     deriving (Show)

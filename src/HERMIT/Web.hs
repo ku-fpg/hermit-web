@@ -38,7 +38,7 @@ import Network.HTTP.Types (status200, status500)
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
 
-import Web.Scotty
+import Web.Scotty.Trans
 
 -- Global state is threaded with an MVar
 -- importantly, the web app code below can pretend
@@ -61,7 +61,7 @@ mkScottyApp wst cst defs = do
                 Left err -> fail err
                 Right (r,w') -> do liftIO $ putMVar sync (s',w')
                                    either (handleError (cl_kernel s')) return r
-    scottyApp runWebM runToIO defs
+    scottyAppT runWebM runToIO defs
 
 handleError :: ScopedKernel -> WebAppError -> IO Wai.Response
 handleError k WAEAbort = do
