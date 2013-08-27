@@ -14,6 +14,18 @@ import qualified Data.Text.Lazy as TL
 
 import Web.Scotty (readEither)
 
+-- | Msg = { 'token' : Token
+--         , 'msg' : String
+--         }
+data Msg = Msg { mToken :: Token, mMsg :: String }
+
+instance ToJSON Msg where
+    toJSON (Msg t m) = object [ "token" .= t , "msg" .= m ]
+
+instance FromJSON Msg where
+    parseJSON (Object v) = Msg <$> v .: "token" <*> v .: "msg"
+    parseJSON _          = mzero
+
 -- | Token = { 'unique' : Number
 --           , 'token' : Number
 --           }
@@ -81,14 +93,14 @@ instance FromJSON CommandResponse where
     parseJSON (Object v) = CommandResponse <$> v .: "token" <*> v .: "glyphs"
     parseJSON _          = mzero
 
--- | CommandList = { 'cmds' : [ CommandInfo ] }
-data CommandList = CommandList { clCmds :: [CommandInfo] }
+-- | CommandList = { 'token' : Token , 'cmds' : [ CommandInfo ] }
+data CommandList = CommandList { clToken :: Token , clCmds :: [CommandInfo] }
 
 instance ToJSON CommandList where
-    toJSON cl = object [ "cmds" .= clCmds cl ]
+    toJSON cl = object [ "token" .= clToken cl , "cmds" .= clCmds cl ]
 
 instance FromJSON CommandList where
-    parseJSON (Object v) = CommandList <$> v .: "cmds" 
+    parseJSON (Object v) = CommandList <$> v .: "token" <*> v .: "cmds" 
     parseJSON _          = mzero
 
 -- | CommandInfo = { 'name' : String

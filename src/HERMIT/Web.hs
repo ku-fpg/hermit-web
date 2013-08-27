@@ -28,7 +28,6 @@ import Control.Monad.State.Lazy hiding (get, put)
 import qualified Control.Monad.State.Lazy as State
 
 import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Default
 import qualified Data.Map as Map
 import Data.Monoid
@@ -121,36 +120,33 @@ server _opts skernel sast = do
                            ,"</form>"
                            ,"</body></html>"]
 
+        -- Generate a new user id and initial token.
         post "/connect" $ do
             m <- webm $ gets users
             let k = nextKey m
             webm $ modify $ \st -> st { users = Map.insert k 0 m }
             json $ Token k 0
 
+        -- Run a command, returning the result.
         post "/command" $ do
-            b <- body
-            liftIO $ putStrLn $ BL.unpack b
             Command t cmd <- jsonData
-            t' <- checkToken t
+            checkUser t
 
             case parseScript cmd of
                 Left  str    -> raise $ T.pack $ "Parse failure: " ++ str
                 Right script -> evalStmts script
 
             ast <- clm $ getAST
-            json $ CommandResponse t' ast
+            json $ CommandResponse t ast
 
+        -- Get the list of commands
         get "/commands" $ do
-            json $ CommandList $ [ CommandInfo (externName e) 
-                                               (unlines $ externHelp e) 
-                                               (externTags e) 
-                                 | e <- shell_externals ++ externals ]
-
-        get "/reset" $ do
             t <- jsonData
-            let t' = t { tToken = 0 }
-            webm $ modify $ \ st -> st { users = Map.insert (tUnique t') 0 (users st) }
-            json t'
+            checkUser t
+            json $ CommandList t $ [ CommandInfo (externName e) 
+                                                 (unlines $ externHelp e) 
+                                                 (externTags e) 
+                                   | e <- shell_externals ++ externals ]
 
     liftIO $ Warp.run 3000 app
 
@@ -162,13 +158,11 @@ nextKey :: Map.Map Integer a -> Integer
 nextKey m | Map.null m = 0
           | otherwise = let (k,_) = Map.findMax m in k + 1
 
-checkToken :: Token -> ActionH Token
-checkToken (Token u t) = do
+checkUser :: Token -> ActionH ()
+checkUser (Token u _) = do
     m <- webm $ gets users
-    t' <- maybe (raise "user id not found!") return $ Map.lookup u m
-    guardMsg (t >= t') "token out of order"
-    webm $ modify $ \ st -> st { users = Map.adjust (+1) u m }
-    return $ Token u (t'+1)
+    when (not $ Map.member u m) (raise $ "user id " <> showText u <> " not found!") 
+    return ()
 
 evalStmts :: Script -> ActionH ()
 evalStmts = mapM_ evalExpr
