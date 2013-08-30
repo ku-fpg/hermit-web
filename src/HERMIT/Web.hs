@@ -10,6 +10,7 @@ import HERMIT.Kure
 import HERMIT.Parser
 import HERMIT.Plugin
 import HERMIT.PrettyPrinter.Common
+import qualified HERMIT.PrettyPrinter.Clean as Clean
 import HERMIT.Shell.Command
 import HERMIT.Shell.Externals
 import HERMIT.Shell.Types
@@ -62,16 +63,13 @@ mkScottyApp wst cst defs = do
                                    either (handleError (cl_kernel s')) return r
     scottyAppT runWebM runToIO defs
 
-runCLMToIO :: CommandLineState -> CLM m a -> m (Either String a, CommandLineState)
-runCLMToIO s = flip runStateT s . runErrorT . runCLM
-
 handleError :: ScopedKernel -> WebAppError -> IO Wai.Response
 handleError k WAEAbort = do
     abortS k
     return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
            $ fromByteString "HERMIT Aborting"
 handleError k (WAEResume sast) = do
-    resumeS k sast >>= runKureM return fail
+    resumeS k sast
     return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
            $ fromByteString "HERMIT Resuming"
 handleError _ (WAEError str) = return $ Wai.ResponseBuilder status500 [("Content-Type","text/html")]
@@ -88,7 +86,7 @@ server _opts skernel initSAST = do
 
     let shellState = CommandLineState
                        { cl_cursor         = initSAST
-                       , cl_pretty         = "clean"
+                       , cl_pretty         = Clean.ppCoreTC
                        , cl_pretty_opts    = def
                        , cl_render         = unicodeConsole
                        , cl_height         = 30
@@ -192,7 +190,7 @@ getResult = do
         ppOpts = (cl_pretty_opts st) { po_focus = Just focusPath }
     iokm2clm' "Rendering error: "
               (\doc -> let Glyphs gs = renderCode ppOpts doc in return (gs, cl_cursor st))
-              (toASTS skernel (cl_cursor st) >>= liftKureM >>= \ ast ->
-                queryK (kernelS skernel) ast (extractT $ pathT (cl_window st) $ liftPrettyH ppOpts $ pretty st) (cl_kernel_env st))
+              (toASTS skernel (cl_cursor st) >>= \ ast ->
+                queryK (kernelS skernel) ast (extractT $ pathT (cl_window st) $ liftPrettyH ppOpts $ cl_pretty st) (cl_kernel_env st))
 
 
