@@ -62,32 +62,32 @@ mkScottyApp wst cst defs = do
                                    either (handleError (cl_kernel s')) return r
     scottyAppT runWebM runToIO defs
 
-handleError :: ScopedKernel -> WebAppError -> IO Wai.Response
-handleError k WAEAbort = do
-    abortS k 
-    return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
-           $ fromByteString "HERMIT Aborting"
-handleError k (WAEResume sast) = do
-    resumeS k sast >>= runKureM return fail 
-    return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
-           $ fromByteString "HERMIT Resuming"
-handleError _ (WAEError str) = return $ Wai.ResponseBuilder status500 [("Content-Type","text/html")]
-                                      $ fromByteString $ BS.pack str 
-
 runCLMToIO :: CommandLineState -> CLM m a -> m (Either String a, CommandLineState)
 runCLMToIO s = flip runStateT s . runErrorT . runCLM
 
+handleError :: ScopedKernel -> WebAppError -> IO Wai.Response
+handleError k WAEAbort = do
+    abortS k
+    return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
+           $ fromByteString "HERMIT Aborting"
+handleError k (WAEResume sast) = do
+    resumeS k sast >>= runKureM return fail
+    return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
+           $ fromByteString "HERMIT Resuming"
+handleError _ (WAEError str) = return $ Wai.ResponseBuilder status500 [("Content-Type","text/html")]
+                                      $ fromByteString $ BS.pack str
+
 plugin :: Plugin
-plugin = hermitPlugin $ \ phaseInfo -> if phaseNum phaseInfo == 0 
+plugin = hermitPlugin $ \ phaseInfo -> if phaseNum phaseInfo == 0
                                        then scopedKernel . server
                                        else const return
 
 server :: [CommandLineOption] -> ScopedKernel -> SAST -> IO ()
-server _opts skernel sast = do
+server _opts skernel initSAST = do
     let dict = mkDict $ shell_externals ++ externals
 
     let shellState = CommandLineState
-                       { cl_cursor         = sast
+                       { cl_cursor         = initSAST
                        , cl_pretty         = "clean"
                        , cl_pretty_opts    = def
                        , cl_render         = unicodeConsole
@@ -101,7 +101,7 @@ server _opts skernel sast = do
                        , cl_dict          = dict
                        , cl_scripts       = []
                        , cl_kernel        = skernel
-                       , cl_initSAST      = sast
+                       , cl_initSAST      = initSAST
                        , cl_version       = VersionStore
                                               { vs_graph = []
                                               , vs_tags  = []
@@ -125,28 +125,30 @@ server _opts skernel sast = do
             m <- webm $ gets users
             let k = nextKey m
             webm $ modify $ \st -> st { users = Map.insert k 0 m }
-            json $ Token k 0
+            sast <- clm $ gets cl_cursor
+            json $ Token k sast
 
         -- Run a command, returning the result.
         post "/command" $ do
             Command t cmd <- jsonData
             checkUser t
 
+            -- problem: this is single-user only
+            clm $ modify $ \ st -> st { cl_cursor = tAst t }
+
             case parseScript cmd of
                 Left  str    -> raise $ T.pack $ "Parse failure: " ++ str
                 Right script -> evalStmts script
 
-            ast <- clm $ getAST
-            json $ CommandResponse t ast
+            (glyphs, ast) <- clm getResult
+            json $ CommandResponse glyphs ast
 
         -- Get the list of commands
         get "/commands" $ do
-            t <- jsonData
-            checkUser t
-            json $ CommandList t $ [ CommandInfo (externName e) 
-                                                 (unlines $ externHelp e) 
-                                                 (externTags e) 
-                                   | e <- shell_externals ++ externals ]
+            json $ CommandList $ [ CommandInfo (externName e)
+                                               (unlines $ externHelp e)
+                                               (externTags e)
+                                 | e <- shell_externals ++ externals ]
 
     liftIO $ Warp.run 3000 app
 
@@ -161,7 +163,7 @@ nextKey m | Map.null m = 0
 checkUser :: Token -> ActionH ()
 checkUser (Token u _) = do
     m <- webm $ gets users
-    when (not $ Map.member u m) (raise $ "user id " <> showText u <> " not found!") 
+    when (not $ Map.member u m) (raise $ "user id " <> showText u <> " not found!")
     return ()
 
 evalStmts :: Script -> ActionH ()
@@ -182,14 +184,14 @@ evalExpr expr = do
              (raise . T.pack)
              (interpExprH dict interpShellCommand expr)
 
-getAST :: MonadIO m => CLM m [Glyph]
-getAST = do
+getResult :: MonadIO m => CLM m ([Glyph], SAST)
+getResult = do
     st <- State.get
     focusPath <- getFocusPath
     let skernel = cl_kernel st
         ppOpts = (cl_pretty_opts st) { po_focus = Just focusPath }
     iokm2clm' "Rendering error: "
-              (\doc -> let Glyphs gs = renderCode ppOpts doc in return gs)
+              (\doc -> let Glyphs gs = renderCode ppOpts doc in return (gs, cl_cursor st))
               (toASTS skernel (cl_cursor st) >>= liftKureM >>= \ ast ->
                 queryK (kernelS skernel) ast (extractT $ pathT (cl_window st) $ liftPrettyH ppOpts $ pretty st) (cl_kernel_env st))
 

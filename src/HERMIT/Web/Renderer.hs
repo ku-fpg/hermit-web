@@ -34,10 +34,10 @@ instance RenderCode Glyphs where
             Glyphs $ case col of
                         KeywordColor  -> [ Glyph "" (Just KEYWORD) ]
                         SyntaxColor   -> [ Glyph "" (Just SYNTAX) ]
-                        IdColor       -> [ Glyph "" (Just VAR) ] 
-                        CoercionColor -> [ Glyph "" Nothing ] -- TODO
+                        IdColor       -> [ Glyph "" (Just VAR) ]
+                        CoercionColor -> [ Glyph "" (Just COERCION) ]
                         TypeColor     -> [ Glyph "" (Just TYPE) ]
                         LitColor      -> [ Glyph "" (Just LIT) ]
-                        WarningColor  -> [ Glyph "" Nothing ] -- TODO
+                        WarningColor  -> [ Glyph "" (Just WARNING) ]
         rDoHighlight o (_:rest) = rDoHighlight o rest
 
