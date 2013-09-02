@@ -1,34 +1,53 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections #-}
 module HERMIT.Web.Types where
 
 import HERMIT.Shell.Types
 import HERMIT.Kernel.Scoped
 
+import Control.Concurrent.MVar
+import Control.Concurrent.STM
 import Control.Monad.Error
-import Control.Monad.State.Lazy hiding (get, put)
+import Control.Monad.Reader
 
 import Data.Default
 import qualified Data.Map as Map
 
 import Web.Scotty.Trans
 
-newtype WebAppState = WebAppState { users :: Map.Map Integer Integer }
-    deriving (Show)
+-- | A note about the design here:
+--
+-- The WebM monad uses a 'ReaderT (TVar WebAppState)' rather 
+-- than 'StateT WebAppState' so Scotty actions are non-blocking.
+-- Using a state transformer requires global state to be synchronized
+-- with an MVar, meaning every request blocks. By storing a TVar
+-- in a reader, only requests that modify the TVar block.
+--
+-- Additionally, the map held by the TVar maps users to MVars
+-- containing their own CommandLineState. This is done for two reasons:
+--
+--   1. Calls to /command won't block, as the TVar doesn't need to be
+--      changed. Currently, only /connect blocks as it adds to the map.
+--
+--   2. Calls to /command by the _same user_ will block each other, 
+--      allowing commands to complete in order. See defn of 'clm' below.
+type UserID = Integer
+newtype WebAppState = WebAppState { users :: Map.Map UserID (MVar CommandLineState) }
 
 instance Default WebAppState where
     def = WebAppState { users = Map.empty }
 
 data WebAppError = WAEAbort | WAEResume SAST | WAEError String
+    deriving (Show)
 
 instance Error WebAppError where strMsg = WAEError
 
-newtype WebT m a = WebT { runWebT :: ErrorT WebAppError (StateT WebAppState m) a }
-    deriving (Monad, MonadIO, MonadState WebAppState, MonadError WebAppError)
+newtype WebT m a = WebT { runWebT :: ErrorT WebAppError (ReaderT (TVar WebAppState) m) a }
+    deriving (Monad, MonadIO, MonadReader (TVar WebAppState), MonadError WebAppError)
 
 instance MonadTrans WebT where
     lift = WebT . lift . lift
 
-type WebM = WebT (CLM IO)
+type WebM = WebT IO
 
 type ScottyH a = ScottyT WebM a
 type ActionH a = ActionT WebM a
@@ -36,14 +55,23 @@ type ActionH a = ActionT WebM a
 -- The monad transformer stack is quite ridiculous at this point.
 -- So here are some helpers to get things to the right place.
 
--- Do something in the CLM IO monad (the HERMIT plugin monad, see HERMIT.Optimize)
-clm :: MonadTrans t => CLM IO a -> t WebM a
-clm = lift . lift
+view :: WebM WebAppState
+view = ask >>= liftIO . readTVarIO 
+
+views :: (WebAppState -> b) -> WebM b
+views f = view >>= return . f
+
+-- Do something in the CLM IO monad for a given user and state modifier.
+clm :: MonadTrans t => UserID -> (CommandLineState -> CommandLineState) -> CLM IO a -> t WebM a
+clm u f m = lift $ do
+    us <- views users
+    mvar <- maybe (throwError $ WAEError "user not found") return $ Map.lookup u us
+    r <- liftIO $ do s <- takeMVar mvar
+                     (r,s') <- runCLMToIO (f s) m
+                     putMVar mvar s'
+                     return r
+    either (throwError . WAEError) return r
 
 -- Do something to the web application state.
 webm :: MonadTrans t => WebM a -> t WebM a
 webm = lift
-
-type UniqueId = Integer
-type TokenNum = Integer
-

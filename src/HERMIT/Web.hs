@@ -24,8 +24,9 @@ import HERMIT.Web.Types
 import Blaze.ByteString.Builder (fromLazyByteString)
 
 import Control.Concurrent.MVar
+import Control.Concurrent.STM
 import Control.Monad.Error
-import Control.Monad.State.Lazy hiding (get, put)
+import Control.Monad.Reader
 import qualified Control.Monad.State.Lazy as State
 
 import qualified Data.Aeson as Aeson
@@ -43,24 +44,21 @@ import Web.Scotty.Trans
 -- Global state is threaded with an MVar
 -- importantly, the web app code below can pretend
 -- there is a normal state monad.
-mkScottyApp :: WebAppState -> CommandLineState -> ScottyH () -> IO Wai.Application
-mkScottyApp wst cst defs = do
-    sync <- newEmptyMVar
+mkScottyApp :: ScopedKernel -> WebAppState -> ScottyH () -> IO Wai.Application
+mkScottyApp kernel wst defs = do
+    sync <- newTVarIO wst
     let runWebM :: WebM a -> IO a
         runWebM m = do
-            (r,s) <- runCLMToIO cst $ flip runStateT wst $ runErrorT $ runWebT m
+            r <- flip runReaderT sync $ runErrorT $ runWebT m
             case r of
-                Left err -> error err
-                Right (r,w) -> do liftIO $ putMVar sync (s,w)
-                                  either (\_ -> fail "don't abort/resume outside of an action") return r
+                Left err -> fail $ "Startup error: " ++ show err
+                Right r' -> return r'
         runToIO :: WebM Wai.Response -> IO Wai.Response
         runToIO m = do
-            (s,w) <- liftIO $ takeMVar sync
-            (r,s') <- runCLMToIO s $ flip runStateT w $ runErrorT $ runWebT m
+            r <- flip runReaderT sync $ runErrorT $ runWebT m
             case r of
-                Left err -> handleError (cl_kernel s') (WAEError err)
-                Right (r,w') -> do liftIO $ putMVar sync (s',w')
-                                   either (handleError (cl_kernel s')) return r
+                Left err -> handleError kernel err
+                Right r' -> return r'
     scottyAppT runWebM runToIO defs
 
 handleError :: ScopedKernel -> WebAppError -> IO Wai.Response
@@ -85,7 +83,7 @@ server :: [CommandLineOption] -> ScopedKernel -> SAST -> IO ()
 server _opts skernel initSAST = do
     let dict = mkDict $ shell_externals ++ externals
 
-    let shellState = CommandLineState
+    let initState = CommandLineState
                        { cl_cursor         = initSAST
                        , cl_pretty         = Clean.ppCoreTC
                        , cl_pretty_opts    = def
@@ -107,12 +105,12 @@ server _opts skernel initSAST = do
                                               }
                        }
 
-    app <- mkScottyApp def shellState $ do
+    app <- mkScottyApp skernel def $ do
         get "/webstate" $ do
-            st <- webm State.get
+            st <- webm view
             html $ mconcat ["<html><body>"
                            ,"Hackers Interface:</br>"
-                           , showText st
+                           , showText $ [ u | (u,_) <- Map.assocs $ users st ]
                            -- abort
                            ,"<form method=POST action=\"/connect\">"
                            ,"<input type=submit name=Go/>"
@@ -121,25 +119,25 @@ server _opts skernel initSAST = do
 
         -- Generate a new user id and initial token.
         post "/connect" $ do
-            m <- webm $ gets users
-            let k = nextKey m
-            webm $ modify $ \st -> st { users = Map.insert k 0 m }
-            sast <- clm $ gets cl_cursor
-            json $ Token k sast
+            uid <- webm $ do sync <- ask
+                             liftIO $ do
+                                mvar <- newMVar initState
+                                atomically $ do
+                                    st <- readTVar sync
+                                    let k = nextKey (users st)
+                                    writeTVar sync $ st { users = Map.insert k mvar (users st) }
+                                    return k
+            json $ Token uid (cl_cursor initState)
 
         -- Run a command, returning the result.
         post "/command" $ do
-            Command t cmd <- jsonData
-            checkUser t
-
-            -- problem: this is single-user only
-            clm $ modify $ \ st -> st { cl_cursor = tAst t }
+            Command (Token u sast) cmd <- jsonData
 
             case parseScript cmd of
                 Left  str    -> raise $ T.pack $ "Parse failure: " ++ str
-                Right script -> evalStmts script
+                Right script -> evalStmts u (\st -> st { cl_cursor = sast }) script
 
-            (glyphs, ast) <- clm getResult
+            (glyphs, ast) <- clm u id getResult
             json $ CommandResponse glyphs ast
 
         -- Get the list of commands
@@ -159,26 +157,20 @@ nextKey :: Map.Map Integer a -> Integer
 nextKey m | Map.null m = 0
           | otherwise = let (k,_) = Map.findMax m in k + 1
 
-checkUser :: Token -> ActionH ()
-checkUser (Token u _) = do
-    m <- webm $ gets users
-    when (not $ Map.member u m) (raise $ "user id " <> showText u <> " not found!")
-    return ()
+evalStmts :: UserID -> (CommandLineState -> CommandLineState) -> Script -> ActionH ()
+evalStmts u f = mapM_ (evalExpr u f)
 
-evalStmts :: Script -> ActionH ()
-evalStmts = mapM_ evalExpr
-
-evalExpr :: ExprH -> ActionH ()
-evalExpr expr = do
-    dict <- clm $ gets cl_dict
+evalExpr :: UserID -> (CommandLineState -> CommandLineState) -> ExprH -> ActionH ()
+evalExpr u f expr = do
+    dict <- clm u f $ State.gets cl_dict
     runKureM (\case
                  -- special case these so the MVar doesn't hang
-                 MetaCommand Resume  -> clm (gets cl_cursor) >>= webm . throwError . WAEResume
+                 MetaCommand Resume  -> clm u f (State.gets cl_cursor) >>= webm . throwError . WAEResume
                  MetaCommand Abort   -> webm $ throwError WAEAbort
-                 KernelEffect effect -> clm $ performKernelEffect effect expr
-                 ShellEffect effect  -> clm $ performShellEffect effect
-                 QueryFun query      -> clm $ performQuery query
-                 MetaCommand meta    -> clm $ performMetaCommand meta
+                 KernelEffect effect -> clm u f $ performKernelEffect effect expr
+                 ShellEffect effect  -> clm u f $ performShellEffect effect
+                 QueryFun query      -> clm u f $ performQuery query
+                 MetaCommand meta    -> clm u f $ performMetaCommand meta
              )
              (raise . T.pack)
              (interpExprH dict interpShellCommand expr)
