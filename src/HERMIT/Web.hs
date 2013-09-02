@@ -21,20 +21,20 @@ import HERMIT.Web.JSON
 import HERMIT.Web.Renderer
 import HERMIT.Web.Types
 
-import Blaze.ByteString.Builder (fromByteString)
+import Blaze.ByteString.Builder (fromLazyByteString)
 
 import Control.Concurrent.MVar
 import Control.Monad.Error
 import Control.Monad.State.Lazy hiding (get, put)
 import qualified Control.Monad.State.Lazy as State
 
-import qualified Data.ByteString.Char8 as BS
+import qualified Data.Aeson as Aeson
 import Data.Default
 import qualified Data.Map as Map
 import Data.Monoid
 import qualified Data.Text.Lazy as T
 
-import Network.HTTP.Types (status200, status500)
+import Network.HTTP.Types (Status, status200, status500)
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
 
@@ -45,7 +45,7 @@ import Web.Scotty.Trans
 -- there is a normal state monad.
 mkScottyApp :: WebAppState -> CommandLineState -> ScottyH () -> IO Wai.Application
 mkScottyApp wst cst defs = do
-    sync <- liftIO newEmptyMVar
+    sync <- newEmptyMVar
     let runWebM :: WebM a -> IO a
         runWebM m = do
             (r,s) <- runCLMToIO cst $ flip runStateT wst $ runErrorT $ runWebT m
@@ -58,7 +58,7 @@ mkScottyApp wst cst defs = do
             (s,w) <- liftIO $ takeMVar sync
             (r,s') <- runCLMToIO s $ flip runStateT w $ runErrorT $ runWebT m
             case r of
-                Left err -> fail err
+                Left err -> handleError (cl_kernel s') (WAEError err)
                 Right (r,w') -> do liftIO $ putMVar sync (s',w')
                                    either (handleError (cl_kernel s')) return r
     scottyAppT runWebM runToIO defs
@@ -66,14 +66,15 @@ mkScottyApp wst cst defs = do
 handleError :: ScopedKernel -> WebAppError -> IO Wai.Response
 handleError k WAEAbort = do
     abortS k
-    return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
-           $ fromByteString "HERMIT Aborting"
+    return $ msgBuilder "HERMIT Aborting" status200 
 handleError k (WAEResume sast) = do
     resumeS k sast
-    return $ Wai.ResponseBuilder status200 [("Content-Type","text/html")]
-           $ fromByteString "HERMIT Resuming"
-handleError _ (WAEError str) = return $ Wai.ResponseBuilder status500 [("Content-Type","text/html")]
-                                      $ fromByteString $ BS.pack str
+    return $ msgBuilder "HERMIT Resuming" status200 
+handleError _ (WAEError str) = return $ msgBuilder str status500 
+
+msgBuilder :: String -> Status -> Wai.Response
+msgBuilder msg s = Wai.ResponseBuilder s [("Content-Type","application/json")]
+                                     $ fromLazyByteString $ Aeson.encode $ Msg msg
 
 plugin :: Plugin
 plugin = hermitPlugin $ \ phaseInfo -> if phaseNum phaseInfo == 0
