@@ -1,21 +1,22 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 module HERMIT.Web.JSON where
 
-import HERMIT.Core
-import HERMIT.External
-import HERMIT.Kernel.Scoped (SAST(..))
+import           Control.Applicative
+import           Control.Monad
 
-import Control.Applicative
-import Control.Monad
-
-import Data.Aeson hiding (json)
-import Data.Aeson.Types
-import Data.Attoparsec.Number (Number(..))
+import           Data.Aeson hiding (json)
+import           Data.Aeson.Types
+import           Data.Attoparsec.Number (Number(..))
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 
-import Web.Scotty (readEither)
+import           HERMIT.Core
+import           HERMIT.External
+import           HERMIT.Kernel.Scoped (SAST(..))
 
+import           Web.Scotty (readEither)
+
+-- | Msg
 data Msg = Msg { mMsg :: String }
 
 instance ToJSON Msg where
@@ -25,6 +26,7 @@ instance FromJSON Msg where
     parseJSON (Object v) = Msg <$> v .: "msg"
     parseJSON _          = mzero
 
+-- | Token
 data Token = Token { tUser :: Integer , tAst :: SAST }
 
 instance ToJSON Token where
@@ -34,6 +36,7 @@ instance FromJSON Token where
     parseJSON (Object v) = Token <$> v .: "user" <*> v .: "ast"
     parseJSON _          = mzero
 
+-- | Command
 data Command = Command { cToken :: Token
                        , cCmd :: String
                        }
@@ -45,6 +48,7 @@ instance FromJSON Command where
     parseJSON (Object v) = Command <$> v .: "token" <*> v .: "cmd"
     parseJSON _          = mzero
 
+-- | SAST
 instance ToJSON SAST where
     toJSON (SAST i) = integerToJSON (fromIntegral i)
 
@@ -58,6 +62,7 @@ fromJSONInteger :: Value -> Parser Integer
 fromJSONInteger (Number (I i)) = return i
 fromJSONInteger _ = mzero
 
+-- | Crumb (currently not used)
 instance ToJSON Crumb where
     -- cases where there are fields
     toJSON (Rec_Def i)         = object [ "crumb" .= ("Rec_Def" :: String)         , "n" .= i ]
@@ -82,7 +87,7 @@ instance FromJSON Crumb where
             _ -> return $ read cstr
     parseJSON _          = mzero
 
-
+-- | CommandResponse
 data CommandResponse = CommandResponse { crGlyphs :: [Glyph]
                                        , crAst :: SAST
                                        }
@@ -94,6 +99,7 @@ instance FromJSON CommandResponse where
     parseJSON (Object v) = CommandResponse <$> v .: "glyphs" <*> v .: "ast"
     parseJSON _          = mzero
 
+-- | CommandList
 data CommandList = CommandList { clCmds :: [CommandInfo] }
 
 instance ToJSON CommandList where
@@ -103,6 +109,7 @@ instance FromJSON CommandList where
     parseJSON (Object v) = CommandList <$> v .: "cmds"
     parseJSON _          = mzero
 
+-- | CommandInfo
 data CommandInfo = CommandInfo { ciName :: String
                                , ciHelp :: String
                                , ciTags :: [CmdTag]
@@ -115,12 +122,14 @@ instance FromJSON CommandInfo where
     parseJSON (Object v) = CommandInfo <$> v .: "name" <*> v .: "help" <*> v .: "tags"
     parseJSON _          = mzero
 
+-- | CmdTag
 instance ToJSON CmdTag where
     toJSON = stringToJSON
 
 instance FromJSON CmdTag where
     parseJSON = fromJSONString
 
+-- | Style
 data Style = KEYWORD | SYNTAX | VAR | COERCION | TYPE | LIT | WARNING
     deriving (Eq, Read, Show)
 
@@ -139,6 +148,7 @@ fromJSONString (String s) =
         Right sty -> pure sty
 fromJSONString _ = mzero
 
+-- | Glyph
 data Glyph = Glyph { gText :: String
                    , gStyle :: Maybe Style
                    }

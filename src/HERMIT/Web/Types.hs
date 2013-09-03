@@ -1,18 +1,18 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections #-}
 module HERMIT.Web.Types where
 
-import HERMIT.Shell.Types
-import HERMIT.Kernel.Scoped
+import           Control.Concurrent.MVar
+import           Control.Concurrent.STM
+import           Control.Monad.Error
+import           Control.Monad.Reader
 
-import Control.Concurrent.MVar
-import Control.Concurrent.STM
-import Control.Monad.Error
-import Control.Monad.Reader
-
-import Data.Default
+import           Data.Default
 import qualified Data.Map as Map
 
-import Web.Scotty.Trans
+import           HERMIT.Kernel.Scoped
+import           HERMIT.Shell.Types
+
+import           Web.Scotty.Trans
 
 -- | A note about the design here:
 --
