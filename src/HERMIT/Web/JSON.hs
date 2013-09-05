@@ -88,15 +88,16 @@ instance FromJSON Crumb where
     parseJSON _          = mzero
 
 -- | CommandResponse
-data CommandResponse = CommandResponse { crGlyphs :: [Glyph]
+data CommandResponse = CommandResponse { crMsg :: Msg
+                                       , crGlyphs :: [Glyph]
                                        , crAst :: SAST
                                        }
 
 instance ToJSON CommandResponse where
-    toJSON cr = object [ "glyphs" .= crGlyphs cr , "ast" .= crAst cr ]
+    toJSON cr = object [ "msg" .= crMsg cr , "glyphs" .= crGlyphs cr , "ast" .= crAst cr ]
 
 instance FromJSON CommandResponse where
-    parseJSON (Object v) = CommandResponse <$> v .: "glyphs" <*> v .: "ast"
+    parseJSON (Object v) = CommandResponse <$> v .: "msg" <*> v .: "glyphs" <*> v .: "ast"
     parseJSON _          = mzero
 
 -- | CommandList

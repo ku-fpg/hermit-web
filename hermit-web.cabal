@@ -46,6 +46,7 @@ Library
   Exposed-modules:
         HERMIT.Web
   other-modules:
+        HERMIT.Web.Actions
         HERMIT.Web.JSON
         HERMIT.Web.Renderer
         HERMIT.Web.Types

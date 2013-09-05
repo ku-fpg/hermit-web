@@ -1,10 +1,18 @@
-module HERMIT.Web.Renderer where
+module HERMIT.Web.Renderer (webChannel) where
+
+import Control.Concurrent.Chan
 
 import Data.Monoid
 
 import HERMIT.PrettyPrinter.Common
 
 import HERMIT.Web.JSON
+
+import System.IO
+
+webChannel :: Chan (Either String [Glyph]) -> Handle -> PrettyOptions -> Either String DocH -> IO ()
+webChannel chan _ _    (Left s) = writeChan chan $ Left s
+webChannel chan _ opts (Right doc) = let Glyphs gs = renderCode opts doc in writeChan chan $ Right gs
 
 newtype Glyphs = Glyphs [ Glyph ]
 

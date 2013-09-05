@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections #-}
 module HERMIT.Web.Types where
 
+import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
 import           Control.Concurrent.STM
 import           Control.Monad.Error
@@ -11,12 +12,13 @@ import qualified Data.Map as Map
 
 import           HERMIT.Kernel.Scoped
 import           HERMIT.Shell.Types
+import           HERMIT.Web.JSON
 
 import           Web.Scotty.Trans
 
 -- | A note about the design here:
 --
--- The WebM monad uses a 'ReaderT (TVar WebAppState)' rather 
+-- The WebM monad uses a 'ReaderT (TVar WebAppState)' rather
 -- than 'StateT WebAppState' so Scotty actions are non-blocking.
 -- Using a state transformer requires global state to be synchronized
 -- with an MVar, meaning every request blocks. By storing a TVar
@@ -28,10 +30,10 @@ import           Web.Scotty.Trans
 --   1. Calls to /command won't block, as the TVar doesn't need to be
 --      changed. Currently, only /connect blocks as it adds to the map.
 --
---   2. Calls to /command by the _same user_ will block each other, 
+--   2. Calls to /command by the _same user_ will block each other,
 --      allowing commands to complete in order. See defn of 'clm' below.
 type UserID = Integer
-newtype WebAppState = WebAppState { users :: Map.Map UserID (MVar CommandLineState) }
+newtype WebAppState = WebAppState { users :: Map.Map UserID (MVar CommandLineState, Chan (Either String [Glyph])) }
 
 instance Default WebAppState where
     def = WebAppState { users = Map.empty }
@@ -56,16 +58,18 @@ type ActionH a = ActionT WebM a
 -- So here are some helpers to get things to the right place.
 
 view :: WebM WebAppState
-view = ask >>= liftIO . readTVarIO 
+view = ask >>= liftIO . readTVarIO
 
 views :: (WebAppState -> b) -> WebM b
 views f = view >>= return . f
 
+viewUser :: UserID -> WebM (MVar CommandLineState, Chan (Either String [Glyph]))
+viewUser u = views users >>= maybe (throwError $ WAEError "User Not Found") return . Map.lookup u
+
 -- Do something in the CLM IO monad for a given user and state modifier.
 clm :: MonadTrans t => UserID -> (CommandLineState -> CommandLineState) -> CLM IO a -> t WebM a
 clm u f m = lift $ do
-    us <- views users
-    mvar <- maybe (throwError $ WAEError "user not found") return $ Map.lookup u us
+    mvar <- liftM fst $ viewUser u
     r <- liftIO $ do s <- takeMVar mvar
                      (r,s') <- runCLMToIO (f s) m
                      putMVar mvar s'
