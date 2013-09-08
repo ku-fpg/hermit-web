@@ -39,6 +39,7 @@ Library
                  text,
                  transformers,
                  wai,
+                 wai-extra,
                  warp
 
   default-language: Haskell2010

@@ -20,6 +20,7 @@ import           HERMIT.Web.Types
 
 import           Network.HTTP.Types (Status, status200, status500)
 import qualified Network.Wai as Wai
+import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
 
 import           Web.Scotty.Trans
 
@@ -51,6 +52,7 @@ server _opts skernel initSAST = do
                 Right r' -> return r'
 
     scottyT 3000 runWebM runAction $ do
+        middleware logStdoutDev
         post "/connect"  $ connect skernel initSAST
         post "/command"    command
         get  "/commands"   commands
