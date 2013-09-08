@@ -86,10 +86,15 @@ command = do
         Left  str    -> raise $ T.pack $ "Parse failure: " ++ str
         Right script -> evalStmts u (\st -> st { cl_cursor = sast }) script
 
-    es <- webm $ liftM snd (viewUser u) >>= liftIO . getChanContents
+    es <- webm $ liftM snd (viewUser u) >>= liftIO . getUntilEmpty
     let (ms,gs) = partitionEithers es
     when (null gs) $ raise "command did not give back an AST!"
     json $ CommandResponse (Msg $ unlines ms) (last gs) ast
+
+getUntilEmpty :: Chan a -> IO [a]
+getUntilEmpty chan = ifM (isEmptyChan chan) 
+                         (return []) 
+                         (readChan chan >>= flip liftM (getUntilEmpty chan) . (:))
 
 -- | evalStmts and evalExpr copied here so we can special case abort/resume.
 evalStmts :: UserID -> (CommandLineState -> CommandLineState) -> Script -> ActionH SAST
