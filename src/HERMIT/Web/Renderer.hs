@@ -4,6 +4,8 @@ import Control.Concurrent.Chan
 
 import Data.Monoid
 
+import HERMIT.Core
+import HERMIT.Kure
 import HERMIT.PrettyPrinter.Common
 
 import HERMIT.Web.JSON
@@ -11,41 +13,54 @@ import HERMIT.Web.JSON
 import System.IO
 
 webChannel :: Chan (Either String [Glyph]) -> Handle -> PrettyOptions -> Either String DocH -> IO ()
-webChannel chan _ _    (Left s) = writeChan chan $ Left s
-webChannel chan _ opts (Right doc) = let Glyphs gs = renderCode opts doc in writeChan chan $ Right gs
+webChannel chan _ _    (Left s)    = writeChan chan $ Left s
+webChannel chan _ opts (Right doc) = let Runes rs = renderCode opts doc
+                                      in writeChan chan $ Right $ runesToGlyphs rs
 
-newtype Glyphs = Glyphs [ Glyph ]
+-- | Runes are precursors to Glyphs
+data Rune = Rune String | Markup Style | PathA (Path Crumb)
 
-instance RenderSpecial Glyphs where
-    renderSpecial sym = Glyphs [ Glyph [ch] (Just SYNTAX) ]
+newtype Runes = Runes [ Rune ]
+
+instance RenderSpecial Runes where
+    renderSpecial sym = Runes [ Markup SYNTAX , Rune [ch] ]
         where Unicode ch = renderSpecial sym
 
-instance Monoid Glyphs where
-        mempty = Glyphs mempty
-        mappend (Glyphs gs1) (Glyphs gs2) = Glyphs $ mergeGlyphs $ gs1 ++ gs2
+instance Monoid Runes where
+        mempty = Runes mempty
+        mappend (Runes rs1) (Runes rs2) = Runes $ mergeRunes $ rs1 ++ rs2
 
-mergeGlyphs :: [Glyph] -> [Glyph]
-mergeGlyphs [] = []
-mergeGlyphs [g] = [g]
-mergeGlyphs (g:h:r) = case go g h of
-                        Left g' -> mergeGlyphs $ g':r
-                        Right (g',h') -> g' : mergeGlyphs (h':r)
-    where go (Glyph "" (Just sty)) (Glyph t Nothing) = Left $ Glyph t (Just sty)
-          go (Glyph "" (Just _)) (Glyph t (Just sty)) = Left $ Glyph t (Just sty)
-          go (Glyph t1 (Just s1)) (Glyph t2 (Just s2)) | s1 == s2 && not (null t2)= Left $ Glyph (unwords [t1,t2]) (Just s1)
-          go g1 g2 = Right (g1,g2)
+mergeRunes :: [Rune] -> [Rune]
+mergeRunes [] = []
+mergeRunes [r] = [r]
+mergeRunes (g:h:r) = case merge g h of
+                        Left g' -> mergeRunes (g':r)
+                        Right (g',h') -> g' : mergeRunes (h':r)
+    where merge (Rune s1)  (Rune s2)   = Left $ Rune (s1 ++ s2)
+          merge (Markup _) (Markup s2) = Left $ Markup s2
+          merge (PathA _)  (PathA p2)  = Left $ PathA p2
+          merge r1         r2          = Right (r1,r2)
 
-instance RenderCode Glyphs where
-        rPutStr txt = Glyphs [ Glyph txt Nothing ]
+runesToGlyphs :: [Rune] -> [Glyph]
+runesToGlyphs = go [] Nothing
+    where go :: Path Crumb -> Maybe Style -> [Rune] -> [Glyph]
+          go _ _ [] = []
+          go p s (Rune str:r) = Glyph str p s : go p s r
+          go p _ (Markup s:r) = go p (Just s) r
+          go _ s (PathA p :r)  = go p s r
+
+instance RenderCode Runes where
+        rPutStr txt = Runes [ Rune txt ]
         rDoHighlight _ [] = mempty
+        rDoHighlight _ (PathAttr p:_) = Runes [ PathA $ snocPathToPath p ]
         rDoHighlight _ (Color col:_) =
-            Glyphs $ case col of
-                        KeywordColor  -> [ Glyph "" (Just KEYWORD) ]
-                        SyntaxColor   -> [ Glyph "" (Just SYNTAX) ]
-                        IdColor       -> [ Glyph "" (Just VAR) ]
-                        CoercionColor -> [ Glyph "" (Just COERCION) ]
-                        TypeColor     -> [ Glyph "" (Just TYPE) ]
-                        LitColor      -> [ Glyph "" (Just LIT) ]
-                        WarningColor  -> [ Glyph "" (Just WARNING) ]
+            Runes $ case col of
+                        KeywordColor  -> [ Markup KEYWORD ]
+                        SyntaxColor   -> [ Markup SYNTAX ]
+                        IdColor       -> [ Markup VAR ]
+                        CoercionColor -> [ Markup COERCION ]
+                        TypeColor     -> [ Markup TYPE ]
+                        LitColor      -> [ Markup LIT ]
+                        WarningColor  -> [ Markup WARNING ]
         rDoHighlight o (_:rest) = rDoHighlight o rest
 

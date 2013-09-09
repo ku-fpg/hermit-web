@@ -10,7 +10,8 @@ import           Data.Attoparsec.Number (Number(..))
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 
-import           HERMIT.Core
+import           HERMIT.Core (Crumb(..))
+import           HERMIT.Kure (Path)
 import           HERMIT.External
 import           HERMIT.Kernel.Scoped (SAST(..))
 
@@ -62,7 +63,7 @@ fromJSONInteger :: Value -> Parser Integer
 fromJSONInteger (Number (I i)) = return i
 fromJSONInteger _ = mzero
 
--- | Crumb (currently not used)
+-- | Crumb
 instance ToJSON Crumb where
     -- cases where there are fields
     toJSON (Rec_Def i)         = object [ "crumb" .= ("Rec_Def" :: String)         , "n" .= i ]
@@ -151,13 +152,14 @@ fromJSONString _ = mzero
 
 -- | Glyph
 data Glyph = Glyph { gText :: String
+                   , gPath :: Path Crumb
                    , gStyle :: Maybe Style
                    }
 
 instance ToJSON Glyph where
-    toJSON g = object (("text" .= gText g) : (maybe [] (\s -> ["style" .= s]) (gStyle g)))
+    toJSON g = object (("text" .= gText g) : ("path" .= gPath g) : (maybe [] (\s -> ["style" .= s]) (gStyle g)))
 
 instance FromJSON Glyph where
-    parseJSON (Object v) = Glyph <$> v .: "text" <*> v .:? "style"
+    parseJSON (Object v) = Glyph <$> v .: "text" <*> v .: "path" <*> v .:? "style"
     parseJSON _          = mzero
 
