@@ -17,6 +17,14 @@ webChannel chan _ _    (Left s)    = writeChan chan $ Left s
 webChannel chan _ opts (Right doc) = let Runes rs = renderCode opts doc
                                       in writeChan chan $ Right $ runesToGlyphs rs
 
+runesToGlyphs :: [Rune] -> [Glyph]
+runesToGlyphs = go [] Nothing
+    where go :: Path Crumb -> Maybe Style -> [Rune] -> [Glyph]
+          go _ _ [] = []
+          go p s (Rune str:r) = Glyph str p s : go p s r
+          go p _ (Markup s:r) = go p (Just s) r
+          go _ s (PathA p :r)  = go p s r
+
 -- | Runes are precursors to Glyphs
 data Rune = Rune String | Markup Style | PathA (Path Crumb)
 
@@ -27,8 +35,8 @@ instance RenderSpecial Runes where
         where Unicode ch = renderSpecial sym
 
 instance Monoid Runes where
-        mempty = Runes mempty
-        mappend (Runes rs1) (Runes rs2) = Runes $ mergeRunes $ rs1 ++ rs2
+    mempty = Runes mempty
+    mappend (Runes rs1) (Runes rs2) = Runes $ mergeRunes $ rs1 ++ rs2
 
 mergeRunes :: [Rune] -> [Rune]
 mergeRunes [] = []
@@ -41,26 +49,18 @@ mergeRunes (g:h:r) = case merge g h of
           merge (PathA _)  (PathA p2)  = Left $ PathA p2
           merge r1         r2          = Right (r1,r2)
 
-runesToGlyphs :: [Rune] -> [Glyph]
-runesToGlyphs = go [] Nothing
-    where go :: Path Crumb -> Maybe Style -> [Rune] -> [Glyph]
-          go _ _ [] = []
-          go p s (Rune str:r) = Glyph str p s : go p s r
-          go p _ (Markup s:r) = go p (Just s) r
-          go _ s (PathA p :r)  = go p s r
-
 instance RenderCode Runes where
-        rPutStr txt = Runes [ Rune txt ]
-        rDoHighlight _ [] = mempty
-        rDoHighlight _ (PathAttr p:_) = Runes [ PathA $ snocPathToPath p ]
-        rDoHighlight _ (Color col:_) =
-            Runes $ case col of
-                        KeywordColor  -> [ Markup KEYWORD ]
-                        SyntaxColor   -> [ Markup SYNTAX ]
-                        IdColor       -> [ Markup VAR ]
-                        CoercionColor -> [ Markup COERCION ]
-                        TypeColor     -> [ Markup TYPE ]
-                        LitColor      -> [ Markup LIT ]
-                        WarningColor  -> [ Markup WARNING ]
-        rDoHighlight o (_:rest) = rDoHighlight o rest
+    rPutStr txt = Runes [ Rune txt ]
+    rDoHighlight _ [] = mempty
+    rDoHighlight _ (PathAttr p:_) = Runes [ PathA $ snocPathToPath p ]
+    rDoHighlight _ (Color col:_) =
+        Runes $ case col of
+                    KeywordColor  -> [ Markup KEYWORD ]
+                    SyntaxColor   -> [ Markup SYNTAX ]
+                    IdColor       -> [ Markup VAR ]
+                    CoercionColor -> [ Markup COERCION ]
+                    TypeColor     -> [ Markup TYPE ]
+                    LitColor      -> [ Markup LIT ]
+                    WarningColor  -> [ Markup WARNING ]
+    rDoHighlight o (_:rest) = rDoHighlight o rest
 

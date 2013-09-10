@@ -163,3 +163,31 @@ instance FromJSON Glyph where
     parseJSON (Object v) = Glyph <$> v .: "text" <*> v .: "path" <*> v .:? "style"
     parseJSON _          = mzero
 
+data History = History { hCmds :: [HCmd]
+                       , hTags :: [HTag]
+                       }
+
+data HCmd = HCmd SAST String SAST
+data HTag = HTag String SAST
+
+instance ToJSON History where
+    toJSON h = object [ "cmds" .= hCmds h , "tags" .= hTags h ]
+
+instance FromJSON History where
+    parseJSON (Object v) = History <$> v .: "cmds" <*> v .: "tags"
+    parseJSON _          = mzero
+
+instance ToJSON HCmd where
+    toJSON (HCmd from e to) = object [ "from" .= from , "cmd" .= e , "to" .= to ]
+
+instance FromJSON HCmd where
+    parseJSON (Object v) = HCmd <$> v .: "from" <*> v .: "cmd" <*> v .: "to"
+    parseJSON _          = mzero
+
+instance ToJSON HTag where
+    toJSON (HTag tag ast) = object [ "tag" .= tag , "ast" .= ast ]
+
+instance FromJSON HTag where
+    parseJSON (Object v) = HTag <$> v .: "tag" <*> v .: "ast"
+    parseJSON _          = mzero
+

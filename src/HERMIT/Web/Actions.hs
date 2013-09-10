@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, LambdaCase #-}
-module HERMIT.Web.Actions (connect, command, commands) where
+module HERMIT.Web.Actions (connect, command, commands, history) where
 
 import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
@@ -92,8 +92,8 @@ command = do
     json $ CommandResponse (Msg $ unlines ms) (last gs) ast
 
 getUntilEmpty :: Chan a -> IO [a]
-getUntilEmpty chan = ifM (isEmptyChan chan) 
-                         (return []) 
+getUntilEmpty chan = ifM (isEmptyChan chan)
+                         (return [])
                          (readChan chan >>= flip liftM (getUntilEmpty chan) . (:))
 
 -- | evalStmts and evalExpr copied here so we can special case abort/resume.
@@ -109,29 +109,16 @@ evalExpr u f expr = do
                  MetaCommand Resume  -> clm u f (State.gets cl_cursor) >>= webm . throwError . WAEResume
                  MetaCommand Abort   -> webm $ throwError WAEAbort
                  KernelEffect effect -> clm u f $ performKernelEffect effect expr >> State.gets cl_cursor
-                 ShellEffect effect  -> clm u f $ performShellEffect effect >> State.gets cl_cursor
-                 QueryFun query      -> clm u f $ performQuery query >> State.gets cl_cursor
-                 MetaCommand meta    -> clm u f $ performMetaCommand meta >> State.gets cl_cursor
+                 ShellEffect effect  -> clm u f $ performShellEffect effect       >> State.gets cl_cursor
+                 QueryFun query      -> clm u f $ performQuery query              >> State.gets cl_cursor
+                 MetaCommand meta    -> clm u f $ performMetaCommand meta         >> State.gets cl_cursor
              )
              (raise . T.pack)
              (interpExprH dict interpShellCommand expr)
 
-{-
--- | Pretty print the current AST using glyphs.
-getResult :: MonadIO m => CLM m ([Glyph], SAST)
-getResult = do
-    st <- State.get
-    focusPath <- getFocusPath
-    let skernel = cl_kernel st
-        ppOpts = (cl_pretty_opts st) { po_focus = Just focusPath }
-    iokm2clm' "Rendering error: "
-              (\doc -> let Glyphs gs = renderCode ppOpts doc in return (gs, cl_cursor st))
-              (toASTS skernel (cl_cursor st) >>= \ ast ->
-                queryK (kernelS skernel) ast (extractT $ pathT (cl_window st) $ liftPrettyH ppOpts $ cl_pretty st) (cl_kernel_env st))
--}
-
 -------------------------- get list of commands -------------------------------
 
+-- TODO: get per-user list of commands
 commands :: ActionH ()
 commands = json
          $ CommandList
@@ -140,3 +127,11 @@ commands = json
                          (externTags e)
            | e <- shell_externals ++ externals ]
 
+-------------------------- get version history --------------------------------
+
+history :: ActionH ()
+history = do
+    u <- jsonData
+    v <- clm u id $ State.gets cl_version
+    json $ History [ HCmd from (unparseExprH e) to | (from,e,to) <- vs_graph v ]
+                   [ HTag str ast | (str,ast) <- vs_tags v ]
