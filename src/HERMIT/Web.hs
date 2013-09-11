@@ -57,6 +57,7 @@ server _opts skernel initSAST = do
         post "/command"    command
         get  "/commands"   commands
         get  "/history"    history
+        post "/complete"   complete
 
 -- | Turn WebAppError into a Response.
 handleError :: ScopedKernel -> WebAppError -> IO Wai.Response

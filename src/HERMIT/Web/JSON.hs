@@ -15,7 +15,11 @@ import           HERMIT.Kure (Path)
 import           HERMIT.External
 import           HERMIT.Kernel.Scoped (SAST(..))
 
+import           System.Console.Haskeline.Completion (Completion(..))
+
 import           Web.Scotty (readEither)
+
+type UserID = Integer
 
 -- | Msg
 data Msg = Msg { mMsg :: String }
@@ -191,3 +195,29 @@ instance FromJSON HTag where
     parseJSON (Object v) = HTag <$> v .: "tag" <*> v .: "ast"
     parseJSON _          = mzero
 
+data Complete = Complete { cpUser :: UserID
+                         , cpCmd :: String
+                         }
+
+instance ToJSON Complete where
+    toJSON c = object [ "user" .= cpUser c , "cmd" .= cpCmd c ]
+
+instance FromJSON Complete where
+    parseJSON (Object v) = Complete <$> v .: "user" <*> v .: "cmd"
+    parseJSON _          = mzero
+
+data Completions = Completions { cCompletions :: [Completion] }
+
+instance ToJSON Completions where
+    toJSON (Completions cs) = object [ "completions" .= cs ]
+
+instance FromJSON Completions where
+    parseJSON (Object v) = Completions <$> v .: "cs" 
+    parseJSON _          = mzero
+
+instance ToJSON Completion where
+    toJSON c = object [ "replacement" .= replacement c , "display" .= display c , "isFinished" .= isFinished c ]
+
+instance FromJSON Completion where
+    parseJSON (Object v) = Completion <$> v .: "replacement" <*> v .: "display" <*> v .: "isFinished"
+    parseJSON _          = mzero

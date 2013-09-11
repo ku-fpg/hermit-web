@@ -32,7 +32,6 @@ import           Web.Scotty.Trans
 --
 --   2. Calls to /command by the _same user_ will block each other,
 --      allowing commands to complete in order. See defn of 'clm' below.
-type UserID = Integer
 newtype WebAppState = WebAppState { users :: Map.Map UserID (MVar CommandLineState, Chan (Either String [Glyph])) }
 
 instance Default WebAppState where

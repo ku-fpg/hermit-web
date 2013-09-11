@@ -28,6 +28,7 @@ Library
                  containers,
                  data-default,
                  ghc >= 7.6,
+                 haskeline, 
                  hermit,
                  http-types,
                  kure >= 2.6.19,

@@ -1,5 +1,11 @@
 {-# LANGUAGE OverloadedStrings, LambdaCase #-}
-module HERMIT.Web.Actions (connect, command, commands, history) where
+module HERMIT.Web.Actions 
+    ( connect
+    , command
+    , commands
+    , history
+    , complete
+    ) where
 
 import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
@@ -8,6 +14,7 @@ import           Control.Monad.Error
 import           Control.Monad.Reader
 import qualified Control.Monad.State.Lazy as State
 
+import           Data.Char (isSpace)
 import           Data.Default
 import           Data.Either
 import qualified Data.Map as Map
@@ -135,3 +142,13 @@ history = do
     v <- clm u id $ State.gets cl_version
     json $ History [ HCmd from (unparseExprH e) to | (from,e,to) <- vs_graph v ]
                    [ HTag str ast | (str,ast) <- vs_tags v ]
+
+---------------------------- get completions ----------------------------------
+
+complete :: ActionH ()
+complete = do
+    Complete u cmd <- jsonData
+    mvar <- liftM fst $ webm $ viewUser u
+    let (rCmd,rPrev) = break isSpace $ reverse cmd
+    res <- liftIO $ shellComplete mvar rPrev $ reverse rCmd
+    json $ Completions res
