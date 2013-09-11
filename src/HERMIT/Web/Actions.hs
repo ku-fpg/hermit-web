@@ -96,7 +96,7 @@ command = do
     es <- webm $ liftM snd (viewUser u) >>= liftIO . getUntilEmpty
     let (ms,gs) = partitionEithers es
     when (null gs) $ raise "command did not give back an AST!"
-    json $ CommandResponse (Msg $ unlines ms) (last gs) ast
+    json $ CommandResponse (unlines ms) (last gs) ast
 
 getUntilEmpty :: Chan a -> IO [a]
 getUntilEmpty chan = ifM (isEmptyChan chan)

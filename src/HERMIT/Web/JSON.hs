@@ -93,7 +93,7 @@ instance FromJSON Crumb where
     parseJSON _          = mzero
 
 -- | CommandResponse
-data CommandResponse = CommandResponse { crMsg :: Msg
+data CommandResponse = CommandResponse { crMsg :: String
                                        , crGlyphs :: [Glyph]
                                        , crAst :: SAST
                                        }
