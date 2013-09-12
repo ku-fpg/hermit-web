@@ -121,7 +121,7 @@ commands = json
 
 history :: ActionH ()
 history = do
-    u <- jsonData
+    Token u _ <- jsonData
     v <- clm u id $ State.gets cl_version
     json $ History [ HCmd from (unparseExprH e) to | (from,e,to) <- vs_graph v ]
                    [ HTag str ast | (str,ast) <- vs_tags v ]

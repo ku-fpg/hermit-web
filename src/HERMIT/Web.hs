@@ -56,7 +56,7 @@ server _opts skernel initSAST = do
         post "/connect"  $ connect skernel initSAST
         post "/command"    command
         get  "/commands"   commands
-        get  "/history"    history
+        post "/history"    history
         post "/complete"   complete
 
 -- | Turn WebAppError into a Response.
