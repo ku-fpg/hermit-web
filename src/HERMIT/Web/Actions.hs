@@ -19,11 +19,9 @@ import           Data.Default
 import           Data.Either
 import qualified Data.Map as Map
 import           Data.Monoid
-import qualified Data.Text.Lazy as T
 
 import           HERMIT.Dictionary
 import           HERMIT.External
-import           HERMIT.Interp
 import           HERMIT.Kure
 import           HERMIT.Parser
 import qualified HERMIT.PrettyPrinter.Clean as Clean
@@ -89,39 +87,24 @@ command :: ActionH ()
 command = do
     Command (Token u sast) cmd <- jsonData
 
-    ast <- case parseScript cmd of
-        Left  str    -> raise $ T.pack $ "Parse failure: " ++ str
-        Right script -> evalStmts u (\st -> st { cl_cursor = sast }) script
+    ast <- clm u (\st -> st { cl_cursor = sast }) $ evalScript cmd >> State.gets cl_cursor
 
     es <- webm $ liftM snd (viewUser u) >>= liftIO . getUntilEmpty
     let (ms,gs) = partitionEithers es
-    when (null gs) $ raise "command did not give back an AST!"
-    json $ CommandResponse (unlines ms) (last gs) ast
+    json $ CommandResponse (optionalMsg ms) (optionalAST gs) ast
+
+optionalAST :: [[Glyph]] -> Maybe [Glyph]
+optionalAST [] = Nothing
+optionalAST gs = Just (last gs)
+
+optionalMsg :: [String] -> Maybe String
+optionalMsg [] = Nothing
+optionalMsg ss = Just (unlines ss)
 
 getUntilEmpty :: Chan a -> IO [a]
 getUntilEmpty chan = ifM (isEmptyChan chan)
                          (return [])
                          (readChan chan >>= flip liftM (getUntilEmpty chan) . (:))
-
--- | evalStmts and evalExpr copied here so we can special case abort/resume.
-evalStmts :: UserID -> (CommandLineState -> CommandLineState) -> Script -> ActionH SAST
-evalStmts _ _ [] = raise "No commands to evaluate!"
-evalStmts u f s  = liftM last $ mapM (evalExpr u f) s
-
-evalExpr :: UserID -> (CommandLineState -> CommandLineState) -> ExprH -> ActionH SAST
-evalExpr u f expr = do
-    dict <- clm u f $ State.gets cl_dict
-    runKureM (\case
-                 -- special case these so the MVar doesn't hang
-                 MetaCommand Resume  -> clm u f (State.gets cl_cursor) >>= webm . throwError . WAEResume
-                 MetaCommand Abort   -> webm $ throwError WAEAbort
-                 KernelEffect effect -> clm u f $ performKernelEffect effect expr >> State.gets cl_cursor
-                 ShellEffect effect  -> clm u f $ performShellEffect effect       >> State.gets cl_cursor
-                 QueryFun query      -> clm u f $ performQuery query              >> State.gets cl_cursor
-                 MetaCommand meta    -> clm u f $ performMetaCommand meta         >> State.gets cl_cursor
-             )
-             (raise . T.pack)
-             (interpExprH dict interpShellCommand expr)
 
 -------------------------- get list of commands -------------------------------
 

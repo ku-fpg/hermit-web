@@ -93,16 +93,19 @@ instance FromJSON Crumb where
     parseJSON _          = mzero
 
 -- | CommandResponse
-data CommandResponse = CommandResponse { crMsg :: String
-                                       , crGlyphs :: [Glyph]
+data CommandResponse = CommandResponse { crMsg :: Maybe String
+                                       , crGlyphs :: Maybe [Glyph]
                                        , crAst :: SAST
                                        }
 
+fromMaybeAttr :: ToJSON a => T.Text -> Maybe a -> [Pair]
+fromMaybeAttr nm = maybe [] (\ a -> [nm .= a])
+
 instance ToJSON CommandResponse where
-    toJSON cr = object [ "msg" .= crMsg cr , "glyphs" .= crGlyphs cr , "ast" .= crAst cr ]
+    toJSON cr = object $ ("ast" .= crAst cr) : fromMaybeAttr "glyphs" (crGlyphs cr) ++ fromMaybeAttr "msg" (crMsg cr)
 
 instance FromJSON CommandResponse where
-    parseJSON (Object v) = CommandResponse <$> v .: "msg" <*> v .: "glyphs" <*> v .: "ast"
+    parseJSON (Object v) = CommandResponse <$> v .:? "msg" <*> v .:? "glyphs" <*> v .: "ast"
     parseJSON _          = mzero
 
 -- | CommandList
@@ -161,7 +164,7 @@ data Glyph = Glyph { gText :: String
                    }
 
 instance ToJSON Glyph where
-    toJSON g = object (("text" .= gText g) : ("path" .= gPath g) : (maybe [] (\s -> ["style" .= s]) (gStyle g)))
+    toJSON g = object (("text" .= gText g) : ("path" .= gPath g) : (fromMaybeAttr "style" (gStyle g)))
 
 instance FromJSON Glyph where
     parseJSON (Object v) = Glyph <$> v .: "text" <*> v .: "path" <*> v .:? "style"

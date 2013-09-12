@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections, LambdaCase #-}
 module HERMIT.Web.Types where
 
 import           Control.Concurrent.Chan
@@ -70,10 +70,15 @@ clm :: MonadTrans t => UserID -> (CommandLineState -> CommandLineState) -> CLM I
 clm u f m = lift $ do
     mvar <- liftM fst $ viewUser u
     r <- liftIO $ do s <- takeMVar mvar
-                     (r,s') <- runCLMToIO (f s) m
-                     putMVar mvar s'
-                     return r
-    either (throwError . WAEError) return r
+                     (r,s') <- runCLM (f s) m
+                     let (s'',r') = either (\case CLAbort         -> (s , Left WAEAbort)
+                                                  CLResume   sast -> (s', Left (WAEResume sast))
+                                                  CLError    err  -> (s , Left (WAEError err))
+                                                  CLContinue st   -> (st, Left (WAEError "continue not supported")))
+                                           ((s',) . Right) r
+                     putMVar mvar s''
+                     return r'
+    either throwError return r
 
 -- Do something to the web application state.
 webm :: MonadTrans t => WebM a -> t WebM a
