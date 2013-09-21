@@ -26,6 +26,7 @@ import           HERMIT.Kure
 import           HERMIT.Parser
 import qualified HERMIT.PrettyPrinter.Clean as Clean
 import           HERMIT.Shell.Command
+import           HERMIT.Shell.Dictionary
 import           HERMIT.Shell.Externals
 import           HERMIT.Shell.Types
 import           HERMIT.Kernel.Scoped
