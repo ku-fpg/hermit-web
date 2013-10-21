@@ -122,13 +122,14 @@ instance FromJSON CommandList where
 data CommandInfo = CommandInfo { ciName :: String
                                , ciHelp :: String
                                , ciTags :: [CmdTag]
+                               , ciType :: String
                                }
 
 instance ToJSON CommandInfo where
-    toJSON ci = object [ "name" .= ciName ci , "help" .= ciHelp ci , "tags" .= ciTags ci ]
+    toJSON ci = object [ "name" .= ciName ci , "help" .= ciHelp ci , "tags" .= ciTags ci, "type" .= ciType ci ]
 
 instance FromJSON CommandInfo where
-    parseJSON (Object v) = CommandInfo <$> v .: "name" <*> v .: "help" <*> v .: "tags"
+    parseJSON (Object v) = CommandInfo <$> v .: "name" <*> v .: "help" <*> v .: "tags" <*> v .: "type"
     parseJSON _          = mzero
 
 -- | CmdTag
@@ -215,7 +216,7 @@ instance ToJSON Completions where
     toJSON (Completions cs) = object [ "completions" .= cs ]
 
 instance FromJSON Completions where
-    parseJSON (Object v) = Completions <$> v .: "cs" 
+    parseJSON (Object v) = Completions <$> v .: "cs"
     parseJSON _          = mzero
 
 instance ToJSON Completion where

@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, LambdaCase #-}
-module HERMIT.Web.Actions 
+module HERMIT.Web.Actions
     ( connect
     , command
     , commands
@@ -113,9 +113,10 @@ getUntilEmpty chan = ifM (isEmptyChan chan)
 commands :: ActionH ()
 commands = json
          $ CommandList
-         $ [ CommandInfo (externName e)
+           [ CommandInfo (externName e)
                          (unlines $ externHelp e)
                          (externTags e)
+                         (externTypeString e)
            | e <- shell_externals ++ externals ]
 
 -------------------------- get version history --------------------------------
