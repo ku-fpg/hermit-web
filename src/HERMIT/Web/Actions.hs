@@ -70,6 +70,7 @@ mkCLState chan kernel sast =
         , cl_running_script = False
         , cl_tick           = error "cl_tick" -- TODO: debugging commands will hit this
         , cl_corelint       = False
+        , cl_diffonly       = False
         , cl_failhard       = False
         , cl_window         = mempty
         , cl_dict           = mkDict $ shell_externals ++ externals
@@ -113,11 +114,9 @@ getUntilEmpty chan = ifM (isEmptyChan chan)
 commands :: ActionH ()
 commands = json
          $ CommandList
-           [ CommandInfo (externName e)
-                         (unlines $ externHelp e)
-                         (externTags e)
-                         (externTypeString e)
-           | e <- shell_externals ++ externals ]
+           [ CommandInfo (externName e) (unlines $ externHelp e) (externTags e) aTys rTy
+           | e <- shell_externals ++ externals
+           , let (aTys, rTy) = externTypeArgResString e ]
 
 -------------------------- get version history --------------------------------
 
