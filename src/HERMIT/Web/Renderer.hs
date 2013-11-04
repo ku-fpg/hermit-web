@@ -18,15 +18,17 @@ webChannel chan _ opts (Right doc) = let Runes rs = renderCode opts doc
                                       in writeChan chan $ Right $ runesToGlyphs rs
 
 runesToGlyphs :: [Rune] -> [Glyph]
-runesToGlyphs = go [] Nothing
-    where go :: Path Crumb -> Maybe Style -> [Rune] -> [Glyph]
-          go _ _ [] = []
-          go p s (Rune str:r) = Glyph str p s : go p s r
-          go p _ (Markup s:r) = go p (Just s) r
-          go _ s (PathA p :r)  = go p s r
+runesToGlyphs = go [] Nothing Nothing
+    where go :: Path Crumb -> Maybe Style -> Maybe (Path Crumb) -> [Rune] -> [Glyph]
+          go _ _ _ [] = []
+          go p s bp (Rune str:r) = Glyph str p s bp : go p s bp r
+          go p _ bp (Markup s:r) = go p (Just s) bp r
+          go _ s bp (PathA p :r) = go p s bp r
+          go p s _  (BndrA bp:r) = go p s (Just bp) r
+          go p s _  (EndBndrA:r) = go p s Nothing r
 
 -- | Runes are precursors to Glyphs
-data Rune = Rune String | Markup Style | PathA (Path Crumb)
+data Rune = Rune String | Markup Style | PathA (Path Crumb) | BndrA (Path Crumb) | EndBndrA
 
 newtype Runes = Runes [ Rune ]
 
@@ -52,6 +54,8 @@ mergeRunes (g:h:r) = case merge g h of
 instance RenderCode Runes where
     rPutStr txt = Runes [ Rune txt ]
     rDoHighlight _ [] = mempty
+    rDoHighlight Nothing (BndrAttr p:_) = Runes [ BndrA $ snocPathToPath p ]
+    rDoHighlight (Just (BndrAttr _)) _ = Runes [ EndBndrA ]
     rDoHighlight _ (PathAttr p:_) = Runes [ PathA $ snocPathToPath p ]
     rDoHighlight _ (Color col:_) =
         Runes $ case col of
