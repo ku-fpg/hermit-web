@@ -44,13 +44,14 @@ instance FromJSON Token where
 -- | Command
 data Command = Command { cToken :: Token
                        , cCmd :: String
+                       , cWidth :: Maybe Int
                        }
 
 instance ToJSON Command where
-    toJSON cmd = object [ "token" .= cToken cmd , "cmd" .= cCmd cmd ]
+    toJSON cmd = object $ fromMaybeAttr "width" (cWidth cmd) ++ [ "token" .= cToken cmd , "cmd" .= cCmd cmd ]
 
 instance FromJSON Command where
-    parseJSON (Object v) = Command <$> v .: "token" <*> v .: "cmd"
+    parseJSON (Object v) = Command <$> v .: "token" <*> v .: "cmd" <*> v .:? "width"
     parseJSON _          = mzero
 
 -- | SAST

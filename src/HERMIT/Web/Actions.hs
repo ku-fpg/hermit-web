@@ -24,6 +24,7 @@ import           HERMIT.Dictionary
 import           HERMIT.External
 import           HERMIT.Kure
 import           HERMIT.Parser
+import           HERMIT.PrettyPrinter.Common (po_width)
 import qualified HERMIT.PrettyPrinter.Clean as Clean
 import           HERMIT.Shell.Command
 import           HERMIT.Shell.Dictionary
@@ -87,9 +88,12 @@ mkCLState chan kernel sast =
 
 command :: ActionH ()
 command = do
-    Command (Token u sast) cmd <- jsonData
+    Command (Token u sast) cmd mWidth <- jsonData
 
-    ast <- clm u (\st -> st { cl_cursor = sast }) $ evalScript cmd >> State.gets cl_cursor
+    let changeState st = let st' = maybe st (\w -> st { cl_pretty_opts = (cl_pretty_opts st) { po_width = w } } ) mWidth
+                         in st' { cl_cursor = sast }
+        
+    ast <- clm u changeState $ evalScript cmd >> State.gets cl_cursor
 
     es <- webm $ liftM snd (viewUser u) >>= liftIO . getUntilEmpty
     let (ms,gs) = partitionEithers es
