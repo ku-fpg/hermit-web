@@ -71,6 +71,6 @@ handleError _ (WAEError str) = return $ msgBuilder str status500
 
 -- | Turn a string and status into a Response containing a JSON-encoded Msg.
 msgBuilder :: String -> Status -> Wai.Response
-msgBuilder msg s = Wai.ResponseBuilder s [("Content-Type","application/json")]
+msgBuilder msg s = Wai.responseBuilder s [("Content-Type","application/json")]
                                      $ fromLazyByteString $ Aeson.encode $ Msg msg
 

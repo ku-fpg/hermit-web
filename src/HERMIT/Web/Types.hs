@@ -9,6 +9,7 @@ import           Control.Monad.Reader
 
 import           Data.Default
 import qualified Data.Map as Map
+import           Data.Text.Lazy (Text)
 
 import           HERMIT.Kernel.Scoped
 import           HERMIT.Shell.Types
@@ -50,8 +51,8 @@ instance MonadTrans WebT where
 
 type WebM = WebT IO
 
-type ScottyH a = ScottyT WebM a
-type ActionH a = ActionT WebM a
+type ScottyH a = ScottyT Text WebM a
+type ActionH a = ActionT Text WebM a
 
 -- The monad transformer stack is quite ridiculous at this point.
 -- So here are some helpers to get things to the right place.
