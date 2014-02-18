@@ -6,7 +6,6 @@ import           Control.Monad
 
 import           Data.Aeson hiding (json)
 import           Data.Aeson.Types
-import           Data.Attoparsec.Number (Number(..))
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 
@@ -56,17 +55,10 @@ instance FromJSON Command where
 
 -- | SAST
 instance ToJSON SAST where
-    toJSON (SAST i) = integerToJSON (fromIntegral i)
+    toJSON (SAST i) = toJSON i
 
 instance FromJSON SAST where
-    parseJSON j = SAST . fromIntegral <$> fromJSONInteger j
-
-integerToJSON :: Integer -> Value
-integerToJSON = Number . I
-
-fromJSONInteger :: Value -> Parser Integer
-fromJSONInteger (Number (I i)) = return i
-fromJSONInteger _ = mzero
+    parseJSON j = SAST <$> parseJSON j
 
 -- | Crumb
 instance ToJSON Crumb where
@@ -153,6 +145,7 @@ instance FromJSON Style where
 
 stringToJSON :: Show a => a -> Value
 stringToJSON = String . T.pack . show
+
 fromJSONString :: Read a => Value -> Parser a
 fromJSONString (String s) =
     case readEither $ TL.fromStrict s of
