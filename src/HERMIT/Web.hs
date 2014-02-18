@@ -11,7 +11,7 @@ import qualified Data.Aeson as Aeson
 import           Data.Default
 
 import           HERMIT.GHC hiding ((<>), liftIO)
-import           HERMIT.Plugin
+import           HERMIT.Plugin.Builder
 import           HERMIT.Kernel.Scoped
 
 import           HERMIT.Web.Actions
@@ -27,13 +27,13 @@ import           Web.Scotty.Trans
 ------------------------------- the plugin ------------------------------------
 
 plugin :: Plugin
-plugin = hermitPlugin $ \ phaseInfo -> if phaseNum phaseInfo == 0
-                                       then scopedKernel . server
-                                       else const return
+plugin = buildPlugin $ \ phaseInfo -> if phaseNum phaseInfo == 0
+                                      then scopedKernel . server phaseInfo
+                                      else const return
 
 -- | The meat of the plugin, which implements the actual Web API.
-server :: [CommandLineOption] -> ScopedKernel -> SAST -> IO ()
-server _opts skernel initSAST = do
+server :: PhaseInfo -> [CommandLineOption] -> ScopedKernel -> SAST -> IO ()
+server phaseInfo _opts skernel initSAST = do
     sync <- newTVarIO def
 
     let -- Functions required by Scotty to run our custom WebM monad.
@@ -53,7 +53,7 @@ server _opts skernel initSAST = do
 
     scottyT 3000 runWebM runAction $ do
         middleware logStdoutDev
-        post "/connect"  $ connect skernel initSAST
+        post "/connect"  $ connect phaseInfo skernel initSAST
         post "/command"    command
         get  "/commands"   commands
         post "/history"    history

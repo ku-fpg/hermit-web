@@ -15,22 +15,26 @@ import           Control.Monad.Reader
 import qualified Control.Monad.State.Lazy as State
 
 import           Data.Char (isSpace)
-import           Data.Default
 import           Data.Either
 import qualified Data.Map as Map
 import           Data.Monoid
 
 import           HERMIT.Dictionary
 import           HERMIT.External
+import           HERMIT.Kernel.Scoped
 import           HERMIT.Kure
 import           HERMIT.Parser
+
+import           HERMIT.Plugin
+import           HERMIT.Plugin.Builder
+import           HERMIT.Plugin.Types
+
 import           HERMIT.PrettyPrinter.Common (po_width)
-import qualified HERMIT.PrettyPrinter.Clean as Clean
+
 import           HERMIT.Shell.Command
 import           HERMIT.Shell.Dictionary
 import           HERMIT.Shell.Externals
-import           HERMIT.Shell.Types
-import           HERMIT.Kernel.Scoped
+import           HERMIT.Shell.Types hiding (clm)
 
 import           HERMIT.Web.JSON
 import           HERMIT.Web.Renderer
@@ -40,12 +44,13 @@ import           Web.Scotty.Trans
 
 ------------------------- connecting a new user -------------------------------
 
-connect :: ScopedKernel -> SAST -> ActionH ()
-connect kernel sast = do
+connect :: PhaseInfo -> ScopedKernel -> SAST -> ActionH ()
+connect phaseInfo kernel sast = do
     uid <- webm $ do sync <- ask
                      liftIO $ do
                         chan <- newChan
-                        mvar <- newMVar $ mkCLState chan kernel sast
+                        cls <- mkCLState chan phaseInfo kernel sast
+                        mvar <- newMVar cls
                         atomically $ do
                             st <- readTVar sync
                             let k = nextKey (users st)
@@ -59,30 +64,23 @@ nextKey m | Map.null m = 0
           | otherwise = let (k,_) = Map.findMax m in k + 1
 
 -- | Build a default state for a new user.
-mkCLState :: Chan (Either String [Glyph]) -> ScopedKernel -> SAST -> CommandLineState
-mkCLState chan kernel sast =
-    CommandLineState
-        { cl_cursor         = sast
-        , cl_pretty         = Clean.ppCoreTC
-        , cl_pretty_opts    = def
-        , cl_render         = webChannel chan
-        , cl_height         = 30
-        , cl_nav            = False
-        , cl_running_script = False
-        , cl_tick           = error "cl_tick" -- TODO: debugging commands will hit this
-        , cl_corelint       = False
-        , cl_diffonly       = False
-        , cl_failhard       = False
-        , cl_window         = mempty
-        , cl_dict           = mkDict $ shell_externals ++ externals
-        , cl_scripts        = []
-        , cl_kernel         = kernel
-        , cl_initSAST       = sast
-        , cl_version        = VersionStore
-                                { vs_graph = []
-                                , vs_tags  = []
-                                }
-        }
+mkCLState :: Chan (Either String [Glyph]) -> PhaseInfo -> ScopedKernel -> SAST -> IO CommandLineState
+mkCLState chan phaseInfo kernel sast = do
+    ps <- defPS sast kernel phaseInfo
+    return $ CommandLineState
+                { cl_pstate = ps { ps_render = webChannel chan }
+                , cl_height         = 30
+                , cl_nav            = False
+                , cl_window         = mempty
+                , cl_dict           = mkDict $ shell_externals ++ externals
+                , cl_lemmas         = []
+                , cl_scripts        = []
+                , cl_initSAST       = sast
+                , cl_version        = VersionStore
+                                        { vs_graph = []
+                                        , vs_tags  = []
+                                        }
+                }
 
 --------------------------- running a command ---------------------------------
 
@@ -90,8 +88,8 @@ command :: ActionH ()
 command = do
     Command (Token u sast) cmd mWidth <- jsonData
 
-    let changeState st = let st' = maybe st (\w -> st { cl_pretty_opts = (cl_pretty_opts st) { po_width = w } } ) mWidth
-                         in st' { cl_cursor = sast }
+    let changeState st = let st' = maybe st (\w -> setPrettyOpts st ((cl_pretty_opts st) { po_width = w })) mWidth
+                         in setCursor st' sast
         
     ast <- clm u changeState $ evalScript cmd >> State.gets cl_cursor
 

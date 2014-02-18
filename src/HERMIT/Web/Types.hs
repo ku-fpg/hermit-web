@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections, LambdaCase #-}
 module HERMIT.Web.Types where
 
+import           Control.Applicative
 import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
 import           Control.Concurrent.STM
@@ -12,7 +13,7 @@ import qualified Data.Map as Map
 import           Data.Text.Lazy (Text)
 
 import           HERMIT.Kernel.Scoped
-import           HERMIT.Shell.Types
+import           HERMIT.Shell.Types hiding (clm)
 import           HERMIT.Web.JSON
 
 import           Web.Scotty.Trans
@@ -44,7 +45,7 @@ data WebAppError = WAEAbort | WAEResume SAST | WAEError String
 instance Error WebAppError where strMsg = WAEError
 
 newtype WebT m a = WebT { runWebT :: ErrorT WebAppError (ReaderT (TVar WebAppState) m) a }
-    deriving (Monad, MonadIO, MonadReader (TVar WebAppState), MonadError WebAppError)
+    deriving (Functor, Applicative, Monad, MonadIO, MonadReader (TVar WebAppState), MonadError WebAppError)
 
 instance MonadTrans WebT where
     lift = WebT . lift . lift
@@ -67,11 +68,11 @@ viewUser :: UserID -> WebM (MVar CommandLineState, Chan (Either String [Glyph]))
 viewUser u = views users >>= maybe (throwError $ WAEError "User Not Found") return . Map.lookup u
 
 -- Do something in the CLM IO monad for a given user and state modifier.
-clm :: MonadTrans t => UserID -> (CommandLineState -> CommandLineState) -> CLM IO a -> t WebM a
+clm :: MonadTrans t => UserID -> (CommandLineState -> CommandLineState) -> CLT IO a -> t WebM a
 clm u f m = lift $ do
     mvar <- liftM fst $ viewUser u
     r <- liftIO $ do s <- takeMVar mvar
-                     (r,s') <- runCLM (f s) m
+                     (r,s') <- runCLT (f s) m
                      let (s'',r') = either (\case CLAbort         -> (s , Left WAEAbort)
                                                   CLResume   sast -> (s', Left (WAEResume sast))
                                                   CLError    err  -> (s , Left (WAEError err))
