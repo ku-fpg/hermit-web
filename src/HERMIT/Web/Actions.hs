@@ -32,7 +32,6 @@ import           HERMIT.Plugin.Types
 import           HERMIT.PrettyPrinter.Common (po_width)
 
 import           HERMIT.Shell.Command
-import           HERMIT.Shell.Dictionary
 import           HERMIT.Shell.Externals
 import           HERMIT.Shell.Types hiding (clm)
 
@@ -72,7 +71,7 @@ mkCLState chan phaseInfo kernel sast = do
                 , cl_height         = 30
                 , cl_nav            = False
                 , cl_window         = mempty
-                , cl_dict           = mkDict $ shell_externals ++ externals
+                , cl_externals      = shell_externals ++ externals
                 , cl_lemmas         = []
                 , cl_scripts        = []
                 , cl_initSAST       = sast
@@ -80,6 +79,7 @@ mkCLState chan phaseInfo kernel sast = do
                                         { vs_graph = []
                                         , vs_tags  = []
                                         }
+                , cl_running_script = Nothing
                 }
 
 --------------------------- running a command ---------------------------------
