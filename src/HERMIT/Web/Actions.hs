@@ -91,7 +91,7 @@ command = do
     let changeState st = let st' = maybe st (\w -> setPrettyOpts st ((cl_pretty_opts st) { po_width = w })) mWidth
                          in setCursor st' sast
         
-    ast <- clm u changeState $ evalScript cmd >> State.gets cl_cursor
+    ast <- clm u changeState $ evalScript interpShellCommand cmd >> State.gets cl_cursor
 
     es <- webm $ liftM snd (viewUser u) >>= liftIO . getUntilEmpty
     let (ms,gs) = partitionEithers es
@@ -134,7 +134,6 @@ history = do
 complete :: ActionH ()
 complete = do
     Complete u cmd <- jsonData
-    mvar <- liftM fst $ webm $ viewUser u
     let (rCmd,rPrev) = break isSpace $ reverse cmd
-    res <- liftIO $ shellComplete mvar rPrev $ reverse rCmd
+    res <- clm u id $ shellComplete rPrev $ reverse rCmd
     json $ Completions res
