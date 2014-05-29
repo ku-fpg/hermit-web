@@ -51,6 +51,8 @@ library
                     HERMIT.Web.JSON
                     HERMIT.Web.Renderer
                     HERMIT.Web.Types
+
+                    Paths_hermit_web
   hs-source-dirs:   src
 
 executable hermit-web
@@ -61,4 +63,5 @@ executable hermit-web
   build-depends:    base >= 4 && < 5,
                     hermit,
                     hermit-web,
-                    process
+                    process,
+                    split
