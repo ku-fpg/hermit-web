@@ -1,10 +1,14 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase #-}
+{-# LANGUAGE CPP, LambdaCase, OverloadedStrings #-}
 module HERMIT.Web (plugin) where
 
 import           Blaze.ByteString.Builder (fromLazyByteString)
 
 import           Control.Concurrent.STM
+#if MIN_VERSION_mtl(2,2,1)
+import           Control.Monad.Except
+#else
 import           Control.Monad.Error
+#endif
 import           Control.Monad.Reader
 
 import qualified Data.Aeson as Aeson
@@ -37,16 +41,23 @@ server phaseInfo _opts skernel initSAST = do
     sync <- newTVarIO def
 
     let -- Functions required by Scotty to run our custom WebM monad.
+        response :: WebM a -> IO (Either WebAppExcept a)
+#if MIN_VERSION_mtl(2,2,1)
+        response = flip runReaderT sync . runExceptT . runWebT
+#else
+        response = flip runReaderT sync . runErrorT . runWebT
+#endif
+    
         runWebM :: WebM a -> IO a
         runWebM m = do
-            r <- flip runReaderT sync $ runErrorT $ runWebT m
+            r <- response m
             case r of
                 Left err -> fail $ "Startup error: " ++ show err
                 Right r' -> return r'
 
         runAction :: WebM Wai.Response -> IO Wai.Response
         runAction m = do
-            r <- flip runReaderT sync $ runErrorT $ runWebT m
+            r <- response m
             case r of
                 Left err -> handleError skernel err
                 Right r' -> return r'
@@ -60,14 +71,14 @@ server phaseInfo _opts skernel initSAST = do
         post "/complete"   complete
 
 -- | Turn WebAppError into a Response.
-handleError :: ScopedKernel -> WebAppError -> IO Wai.Response
+handleError :: ScopedKernel -> WebAppExcept -> IO Wai.Response
 handleError k WAEAbort = do
     abortS k
     return $ msgBuilder "HERMIT Aborting" status200
 handleError k (WAEResume sast) = do
     resumeS k sast
     return $ msgBuilder "HERMIT Resuming" status200
-handleError _ (WAEError str) = return $ msgBuilder str status500
+handleError _ (WAEExcept str) = return $ msgBuilder str status500
 
 -- | Turn a string and status into a Response containing a JSON-encoded Msg.
 msgBuilder :: String -> Status -> Wai.Response

@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase #-}
+{-# LANGUAGE CPP, LambdaCase, OverloadedStrings #-}
 module HERMIT.Web.Actions
     ( connect
     , command
@@ -10,7 +10,11 @@ module HERMIT.Web.Actions
 import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
 import           Control.Concurrent.STM
+#if MIN_VERSION_mtl(2,2,1)
+import           Control.Monad.Except
+#else
 import           Control.Monad.Error
+#endif
 import           Control.Monad.Reader
 import qualified Control.Monad.State.Lazy as State
 

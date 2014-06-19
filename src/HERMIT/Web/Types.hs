@@ -1,11 +1,15 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections, LambdaCase #-}
+{-# LANGUAGE CPP, GeneralizedNewtypeDeriving, LambdaCase, TupleSections #-}
 module HERMIT.Web.Types where
 
 import           Control.Applicative
 import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
 import           Control.Concurrent.STM
+#if MIN_VERSION_mtl(2,2,1)
+import           Control.Monad.Except
+#else
 import           Control.Monad.Error
+#endif
 import           Control.Monad.Reader
 
 import           Data.Default
@@ -39,13 +43,19 @@ newtype WebAppState = WebAppState { users :: Map.Map UserID (MVar CommandLineSta
 instance Default WebAppState where
     def = WebAppState { users = Map.empty }
 
-data WebAppError = WAEAbort | WAEResume SAST | WAEError String
+data WebAppExcept = WAEAbort | WAEResume SAST | WAEExcept String
     deriving (Show)
 
-instance Error WebAppError where strMsg = WAEError
+#if !(MIN_VERSION_mtl(2,2,1))
+instance Error WebAppExcept where strMsg = WAEExcept
+#endif
 
-newtype WebT m a = WebT { runWebT :: ErrorT WebAppError (ReaderT (TVar WebAppState) m) a }
-    deriving (Functor, Applicative, Monad, MonadIO, MonadReader (TVar WebAppState), MonadError WebAppError)
+#if MIN_VERSION_mtl(2,2,1)
+newtype WebT m a = WebT { runWebT :: ExceptT WebAppExcept (ReaderT (TVar WebAppState) m) a }
+#else
+newtype WebT m a = WebT { runWebT :: ErrorT WebAppExcept (ReaderT (TVar WebAppState) m) a }
+#endif
+    deriving (Functor, Applicative, Monad, MonadIO, MonadReader (TVar WebAppState), MonadError WebAppExcept)
 
 instance MonadTrans WebT where
     lift = WebT . lift . lift
@@ -65,7 +75,7 @@ views :: (WebAppState -> b) -> WebM b
 views f = view >>= return . f
 
 viewUser :: UserID -> WebM (MVar CommandLineState, Chan (Either String [Glyph]))
-viewUser u = views users >>= maybe (throwError $ WAEError "User Not Found") return . Map.lookup u
+viewUser u = views users >>= maybe (throwError $ WAEExcept "User Not Found") return . Map.lookup u
 
 -- Do something in the CLM IO monad for a given user and state modifier.
 clm :: MonadTrans t => UserID -> (CommandLineState -> CommandLineState) -> CLT IO a -> t WebM a
@@ -75,8 +85,8 @@ clm u f m = lift $ do
                      (r,s') <- runCLT (f s) m
                      let (s'',r') = either (\case CLAbort         -> (s , Left WAEAbort)
                                                   CLResume   sast -> (s', Left (WAEResume sast))
-                                                  CLError    err  -> (s , Left (WAEError err))
-                                                  CLContinue st   -> (st, Left (WAEError "continue not supported")))
+                                                  CLError    err  -> (s , Left (WAEExcept err))
+                                                  CLContinue st   -> (st, Left (WAEExcept "continue not supported")))
                                            ((s',) . Right) r
                      putMVar mvar s''
                      return r'
