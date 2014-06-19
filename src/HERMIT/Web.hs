@@ -41,7 +41,7 @@ server phaseInfo _opts skernel initSAST = do
     sync <- newTVarIO def
 
     let -- Functions required by Scotty to run our custom WebM monad.
-        response :: WebM a -> IO (Either WebAppExcept a)
+        response :: WebM a -> IO (Either WebAppException a)
 #if MIN_VERSION_mtl(2,2,1)
         response = flip runReaderT sync . runExceptT . runWebT
 #else
@@ -70,15 +70,15 @@ server phaseInfo _opts skernel initSAST = do
         post "/history"    history
         post "/complete"   complete
 
--- | Turn WebAppError into a Response.
-handleError :: ScopedKernel -> WebAppExcept -> IO Wai.Response
+-- | Turn WebAppException into a Response.
+handleError :: ScopedKernel -> WebAppException -> IO Wai.Response
 handleError k WAEAbort = do
     abortS k
     return $ msgBuilder "HERMIT Aborting" status200
 handleError k (WAEResume sast) = do
     resumeS k sast
     return $ msgBuilder "HERMIT Resuming" status200
-handleError _ (WAEExcept str) = return $ msgBuilder str status500
+handleError _ (WAEError str) = return $ msgBuilder str status500
 
 -- | Turn a string and status into a Response containing a JSON-encoded Msg.
 msgBuilder :: String -> Status -> Wai.Response

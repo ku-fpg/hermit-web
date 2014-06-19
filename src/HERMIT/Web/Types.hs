@@ -43,19 +43,19 @@ newtype WebAppState = WebAppState { users :: Map.Map UserID (MVar CommandLineSta
 instance Default WebAppState where
     def = WebAppState { users = Map.empty }
 
-data WebAppExcept = WAEAbort | WAEResume SAST | WAEExcept String
+data WebAppException = WAEAbort | WAEResume SAST | WAEError String
     deriving (Show)
 
 #if !(MIN_VERSION_mtl(2,2,1))
-instance Error WebAppExcept where strMsg = WAEExcept
+instance Error WebAppException where strMsg = WAEError
 #endif
 
 #if MIN_VERSION_mtl(2,2,1)
-newtype WebT m a = WebT { runWebT :: ExceptT WebAppExcept (ReaderT (TVar WebAppState) m) a }
+newtype WebT m a = WebT { runWebT :: ExceptT WebAppException (ReaderT (TVar WebAppState) m) a }
 #else
-newtype WebT m a = WebT { runWebT :: ErrorT WebAppExcept (ReaderT (TVar WebAppState) m) a }
+newtype WebT m a = WebT { runWebT :: ErrorT WebAppException (ReaderT (TVar WebAppState) m) a }
 #endif
-    deriving (Functor, Applicative, Monad, MonadIO, MonadReader (TVar WebAppState), MonadError WebAppExcept)
+    deriving (Functor, Applicative, Monad, MonadIO, MonadReader (TVar WebAppState), MonadError WebAppException)
 
 instance MonadTrans WebT where
     lift = WebT . lift . lift
@@ -75,7 +75,7 @@ views :: (WebAppState -> b) -> WebM b
 views f = view >>= return . f
 
 viewUser :: UserID -> WebM (MVar CommandLineState, Chan (Either String [Glyph]))
-viewUser u = views users >>= maybe (throwError $ WAEExcept "User Not Found") return . Map.lookup u
+viewUser u = views users >>= maybe (throwError $ WAEError "User Not Found") return . Map.lookup u
 
 -- Do something in the CLM IO monad for a given user and state modifier.
 clm :: MonadTrans t => UserID -> (CommandLineState -> CommandLineState) -> CLT IO a -> t WebM a
@@ -85,8 +85,8 @@ clm u f m = lift $ do
                      (r,s') <- runCLT (f s) m
                      let (s'',r') = either (\case CLAbort         -> (s , Left WAEAbort)
                                                   CLResume   sast -> (s', Left (WAEResume sast))
-                                                  CLError    err  -> (s , Left (WAEExcept err))
-                                                  CLContinue st   -> (st, Left (WAEExcept "continue not supported")))
+                                                  CLError    err  -> (s , Left (WAEError err))
+                                                  CLContinue st   -> (st, Left (WAEError "continue not supported")))
                                            ((s',) . Right) r
                      putMVar mvar s''
                      return r'
