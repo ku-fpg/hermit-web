@@ -2,7 +2,6 @@
 module HERMIT.Web.Types where
 
 import           Control.Applicative
-import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
 import           Control.Concurrent.STM
 #if MIN_VERSION_mtl(2,2,1)
@@ -38,7 +37,7 @@ import           Web.Scotty.Trans
 --
 --   2. Calls to /command by the _same user_ will block each other,
 --      allowing commands to complete in order. See defn of 'clm' below.
-newtype WebAppState = WebAppState { users :: Map.Map UserID (MVar CommandLineState, Chan (Either String [Glyph])) }
+newtype WebAppState = WebAppState { users :: Map.Map UserID (MVar CommandLineState, TChan (Either String [Glyph])) }
 
 instance Default WebAppState where
     def = WebAppState { users = Map.empty }
@@ -74,7 +73,7 @@ view = ask >>= liftIO . readTVarIO
 views :: (WebAppState -> b) -> WebM b
 views f = view >>= return . f
 
-viewUser :: UserID -> WebM (MVar CommandLineState, Chan (Either String [Glyph]))
+viewUser :: UserID -> WebM (MVar CommandLineState, TChan (Either String [Glyph]))
 viewUser u = views users >>= maybe (throwError $ WAEError "User Not Found") return . Map.lookup u
 
 -- Do something in the CLM IO monad for a given user and state modifier.

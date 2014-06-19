@@ -7,7 +7,6 @@ module HERMIT.Web.Actions
     , complete
     ) where
 
-import           Control.Concurrent.Chan
 import           Control.Concurrent.MVar
 import           Control.Concurrent.STM
 #if MIN_VERSION_mtl(2,2,1)
@@ -51,7 +50,7 @@ connect :: PhaseInfo -> ScopedKernel -> SAST -> ActionH ()
 connect phaseInfo kernel sast = do
     uid <- webm $ do sync <- ask
                      liftIO $ do
-                        chan <- newChan
+                        chan <- atomically newTChan
                         cls <- mkCLState chan phaseInfo kernel sast
                         mvar <- newMVar cls
                         atomically $ do
@@ -67,7 +66,7 @@ nextKey m | Map.null m = 0
           | otherwise = let (k,_) = Map.findMax m in k + 1
 
 -- | Build a default state for a new user.
-mkCLState :: Chan (Either String [Glyph]) -> PhaseInfo -> ScopedKernel -> SAST -> IO CommandLineState
+mkCLState :: TChan (Either String [Glyph]) -> PhaseInfo -> ScopedKernel -> SAST -> IO CommandLineState
 mkCLState chan phaseInfo kernel sast = do
     ps <- defPS sast kernel phaseInfo
     return $ CommandLineState
@@ -109,10 +108,10 @@ optionalMsg :: [String] -> Maybe String
 optionalMsg [] = Nothing
 optionalMsg ss = Just (unlines ss)
 
-getUntilEmpty :: Chan a -> IO [a]
-getUntilEmpty chan = ifM (isEmptyChan chan)
+getUntilEmpty :: TChan a -> IO [a]
+getUntilEmpty chan = ifM (atomically $ isEmptyTChan chan)
                          (return [])
-                         (readChan chan >>= flip liftM (getUntilEmpty chan) . (:))
+                         (atomically (readTChan chan) >>= flip liftM (getUntilEmpty chan) . (:))
 
 -------------------------- get list of commands -------------------------------
 
