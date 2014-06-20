@@ -75,7 +75,6 @@ mkCLState chan phaseInfo kernel sast = do
                 , cl_nav            = False
                 , cl_window         = mempty
                 , cl_externals      = shell_externals ++ externals
-                , cl_lemmas         = []
                 , cl_scripts        = []
                 , cl_initSAST       = sast
                 , cl_version        = VersionStore
