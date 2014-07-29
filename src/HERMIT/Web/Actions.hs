@@ -46,12 +46,12 @@ import           Web.Scotty.Trans
 
 ------------------------- connecting a new user -------------------------------
 
-connect :: PhaseInfo -> ScopedKernel -> SAST -> ActionH ()
-connect phaseInfo kernel sast = do
+connect :: PassInfo -> ScopedKernel -> SAST -> ActionH ()
+connect passInfo kernel sast = do
     uid <- webm $ do sync <- ask
                      liftIO $ do
                         chan <- atomically newTChan
-                        cls <- mkCLState chan phaseInfo kernel sast
+                        cls <- mkCLState chan passInfo kernel sast
                         mvar <- newMVar cls
                         atomically $ do
                             st <- readTVar sync
@@ -66,9 +66,9 @@ nextKey m | Map.null m = 0
           | otherwise = let (k,_) = Map.findMax m in k + 1
 
 -- | Build a default state for a new user.
-mkCLState :: TChan (Either String [Glyph]) -> PhaseInfo -> ScopedKernel -> SAST -> IO CommandLineState
-mkCLState chan phaseInfo kernel sast = do
-    ps <- defPS sast kernel phaseInfo
+mkCLState :: TChan (Either String [Glyph]) -> PassInfo -> ScopedKernel -> SAST -> IO CommandLineState
+mkCLState chan passInfo kernel sast = do
+    ps <- defPS sast kernel passInfo
     return $ CommandLineState
                 { cl_pstate = ps { ps_render = webChannel chan }
                 , cl_height         = 30

@@ -31,13 +31,13 @@ import           Web.Scotty.Trans
 ------------------------------- the plugin ------------------------------------
 
 plugin :: Plugin
-plugin = buildPlugin $ \ phaseInfo -> if phaseNum phaseInfo == 0
-                                      then scopedKernel . server phaseInfo
+plugin = buildPlugin $ \ passInfo -> if passNum passInfo == 0
+                                      then scopedKernel . server passInfo
                                       else const return
 
 -- | The meat of the plugin, which implements the actual Web API.
-server :: PhaseInfo -> [CommandLineOption] -> ScopedKernel -> SAST -> IO ()
-server phaseInfo _opts skernel initSAST = do
+server :: PassInfo -> [CommandLineOption] -> ScopedKernel -> SAST -> IO ()
+server passInfo _opts skernel initSAST = do
     sync <- newTVarIO def
 
     let -- Functions required by Scotty to run our custom WebM monad.
@@ -64,7 +64,7 @@ server phaseInfo _opts skernel initSAST = do
 
     scottyT 3000 runWebM runAction $ do
         middleware logStdoutDev
-        post "/connect"  $ connect phaseInfo skernel initSAST
+        post "/connect"  $ connect passInfo skernel initSAST
         post "/command"    command
         get  "/commands"   commands
         post "/history"    history
